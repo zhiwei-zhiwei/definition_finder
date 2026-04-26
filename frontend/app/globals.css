@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { height: 100%; }
+body { margin: 0; padding: 0; }
+
+.glass-panel {
+  background-color: rgba(248, 249, 255, 0.8);
+  backdrop-filter: blur(20px);
+}
+.gradient-primary {
+  background: linear-gradient(135deg, #004ac6, #2563eb);
+}
+.ambient-shadow {
+  box-shadow: 0 8px 40px -8px rgba(11, 28, 48, 0.06);
+}
+
+.custom-scroll::-webkit-scrollbar { width: 6px; }
+.custom-scroll::-webkit-scrollbar-track { background: transparent; }
+.custom-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(115, 118, 134, 0.2);
+  border-radius: 10px;
+}
+
+.material-symbols-outlined {
+  font-family: "Material Symbols Outlined";
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: "liga";
+  -webkit-font-smoothing: antialiased;
+}
+
+/* PDF bbox + HTML data-chunk highlight styles */
+.bbox-highlight {
+  position: absolute;
+  background-color: rgba(37, 99, 235, 0.2);
+  border: 1px solid rgba(37, 99, 235, 0.4);
+  border-radius: 2px;
+  pointer-events: none;
+  transition: background-color 0.3s ease;
+}
+.bbox-highlight.flash {
+  background-color: rgba(37, 99, 235, 0.45);
+  animation: flash 1.5s ease-out;
+}
+@keyframes flash {
+  0% { background-color: rgba(37, 99, 235, 0.6); }
+  100% { background-color: rgba(37, 99, 235, 0.2); }
+}
+
+.chunk-highlight {
+  background-color: rgba(37, 99, 235, 0.25);
+  transition: background-color 0.3s ease;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.chunk-highlight-faded {
+  background-color: rgba(37, 99, 235, 0.12);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* react-pdf page layer width alignment */
+.react-pdf__Page { margin-bottom: 12px; }
+.react-pdf__Page__canvas { margin: 0 auto; }
+
+.snippet-card { position: relative; }
