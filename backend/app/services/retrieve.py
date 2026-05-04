@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.schema import ChildChunk, ParentChunk
+from app.services import bm25 as bm25_service
 from app.services.embed import embed_batch
 from app.services.vectorstore import collection_for
 
@@ -62,6 +63,74 @@ def search_with_vec(doc_id: str, qvec: list[float], top_k: int) -> list[Hit]:
 
 def search(doc_id: str, query: str, top_k: int) -> list[Hit]:
     return search_with_vec(doc_id, embed_query(query), top_k)
+
+
+def _rrf_merge(rankings: list[list[str]], k: int = 60) -> dict[str, float]:
+    """Reciprocal Rank Fusion: combine multiple rankers without score normalization.
+
+    `score(d) = sum over rankers of 1 / (k + rank(d))`. Higher is better.
+    """
+    out: dict[str, float] = {}
+    for ranking in rankings:
+        for rank, cid in enumerate(ranking):
+            out[cid] = out.get(cid, 0.0) + 1.0 / (k + rank + 1)
+    return out
+
+
+def hybrid_search(
+    db: Session,
+    doc_id: str,
+    qvec: list[float],
+    query_text: str,
+    top_k: int,
+    candidate_n: int | None = None,
+) -> list[Hit]:
+    """Run vector + BM25 in parallel and fuse with RRF.
+
+    - Vector arm captures semantic neighbours.
+    - BM25 arm captures rare lexical matches (proper nouns, statute codes).
+    - Fused score replaces the per-arm score on the returned Hit so the UI
+      reflects the hybrid ranking.
+    """
+    n = candidate_n or max(top_k * 4, 20)
+    vec_hits = search_with_vec(doc_id, qvec, n)
+    bm25_hits = bm25_service.bm25_search(db, doc_id, query_text, n)
+
+    fused = _rrf_merge(
+        [
+            [h.child_id for h in vec_hits],
+            [cid for cid, _ in bm25_hits],
+        ]
+    )
+    if not fused:
+        return []
+
+    by_id: dict[str, Hit] = {h.child_id: h for h in vec_hits}
+    missing = [cid for cid in fused if cid not in by_id]
+    if missing:
+        rows = db.query(ChildChunk).filter(ChildChunk.id.in_(missing)).all()
+        for r in rows:
+            by_id[r.id] = Hit(
+                child_id=r.id,
+                parent_id=r.parent_id,
+                text=r.text,
+                score=0.0,
+                page_start=None,
+                page_end=None,
+                bboxes=[],
+                html_anchor=r.html_anchor,
+            )
+
+    ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)
+    top_score = ranked[0][1] if ranked else 1.0
+    out: list[Hit] = []
+    for cid, fused_score in ranked[:top_k]:
+        h = by_id.get(cid)
+        if h is None:
+            continue
+        h.score = fused_score / top_score if top_score > 0 else 0.0
+        out.append(h)
+    return out
 
 
 def consolidate(hits: list[Hit], threshold: int | None = None) -> tuple[list[str], dict[str, int]]:

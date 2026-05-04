@@ -22,6 +22,7 @@ export type Snippet = {
   page_end: number | null;
   bboxes: Array<{ page: number; x0: number; y0: number; x1: number; y1: number }>;
   html_anchor: string | null;
+  highlight_spans?: Array<[number, number]>;
 };
 
 export async function listDocuments(): Promise<DocumentRecord[]> {

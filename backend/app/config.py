@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     CHAT_MODEL: str = "gpt-4.1-mini"
 
     PARENT_TOKENS: int = 1000
-    CHILD_TOKENS: int = 200
+    CHILD_TOKENS: int = 120
 
     DEFAULT_TOP_K: int = 5
     PARENT_CONSOLIDATION_THRESHOLD: int = 3

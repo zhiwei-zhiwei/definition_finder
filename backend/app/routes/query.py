@@ -9,6 +9,7 @@ from app.config import settings
 from app.models.db import SessionLocal
 from app.models.schema import Document
 from app.services import prepare, retrieve, summarize
+from app.services.highlight import compute_spans
 from app.utils.sse import sse_event
 
 log = logging.getLogger(__name__)
@@ -48,12 +49,15 @@ async def _query_stream(req: QueryRequest):
         await asyncio.sleep(0)
         qvec = await loop.run_in_executor(None, retrieve.embed_query, req.query)
 
-        # 2. Vector search against Chroma.
+        # 2. Hybrid search: vector + BM25 fused via Reciprocal Rank Fusion.
         yield sse_event("stage", {"stage": "searching", "top_k": req.top_k})
         await asyncio.sleep(0)
-        hits = await loop.run_in_executor(
-            None, retrieve.search_with_vec, req.doc_id, qvec, req.top_k
-        )
+
+        def _do_hybrid() -> list[retrieve.Hit]:
+            with SessionLocal() as db:
+                return retrieve.hybrid_search(db, req.doc_id, qvec, req.query, req.top_k)
+
+        hits = await loop.run_in_executor(None, _do_hybrid)
         with SessionLocal() as db:
             hits = retrieve.enrich_hits_from_db(db, hits)
 
@@ -81,6 +85,7 @@ async def _query_stream(req: QueryRequest):
                 "page_end": h.page_end,
                 "bboxes": h.bboxes,
                 "html_anchor": h.html_anchor,
+                "highlight_spans": compute_spans(h.text, req.query),
             }
             for h in hits
         ]

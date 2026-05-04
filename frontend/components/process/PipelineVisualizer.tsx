@@ -1,6 +1,7 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { StageEvent } from "@/lib/types";
 
 type StageSpec = { key: string; label: string; icon: string };
@@ -44,62 +45,96 @@ export function PipelineVisualizer({ activeStage, lastPayload, snippetCount, fin
     prepLabel && typeof lastPayload?.progress === "number"
       ? Math.round(lastPayload.progress * 100)
       : null;
+  const [collapsed, setCollapsed] = useState(false);
+  const prevFinished = useRef(false);
+  useEffect(() => {
+    if (finished && !prevFinished.current) {
+      setCollapsed(true);
+    } else if (!finished && prevFinished.current) {
+      setCollapsed(false);
+    }
+    prevFinished.current = finished;
+  }, [finished]);
   return (
     <div className="bg-surface-container-lowest rounded-lg p-5 ambient-shadow shrink-0 relative overflow-hidden">
       <div className="absolute top-0 left-0 w-1 h-full gradient-primary" />
-      <h3 className="font-headline font-semibold text-on-surface mb-4 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => setCollapsed((c) => !c)}
+        aria-expanded={!collapsed}
+        aria-controls="analysis-engine-stages"
+        className="font-headline font-semibold text-on-surface w-full flex items-center gap-2 text-left"
+      >
         <span className="material-symbols-outlined text-primary text-sm">psychology</span>
         Analysis Engine
-      </h3>
-      {prepLabel && (
-        <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20 text-[12px] text-on-surface flex items-center gap-2">
+        <span className="material-symbols-outlined text-on-surface-variant text-[18px] ml-auto">
+          {collapsed ? "expand_more" : "expand_less"}
+        </span>
+      </button>
+      <AnimatePresence initial={false}>
+        {!collapsed && (
           <motion.div
-            className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent"
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-          />
-          <span>
-            Preparing document (first-time only): {prepLabel}
-            {progressPct !== null ? ` — ${progressPct}%` : ""}
-          </span>
-        </div>
-      )}
-      <div className="space-y-3 font-label text-sm">
-        {STAGES.map((s, i) => {
-          const state = stateOf(s.key, activeStage, finished);
-          const showConnector = i < STAGES.length - 1;
-          return (
-            <div key={s.key}>
-              <div className="flex items-start gap-3">
-                {state === "active" ? (
+            id="analysis-engine-stages"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            style={{ overflow: "hidden" }}
+          >
+            <div className="pt-4">
+              {prepLabel && (
+                <div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20 text-[12px] text-on-surface flex items-center gap-2">
                   <motion.div
-                    className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent mt-0.5"
+                    className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent"
                     animate={{ rotate: 360 }}
                     transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
                   />
-                ) : state === "done" ? (
-                  <span className="material-symbols-outlined text-primary text-[16px] mt-0.5">check_circle</span>
-                ) : (
-                  <span className="material-symbols-outlined text-on-surface-variant/50 text-[16px] mt-0.5">
-                    {s.icon}
+                  <span>
+                    Preparing document (first-time only): {prepLabel}
+                    {progressPct !== null ? ` — ${progressPct}%` : ""}
                   </span>
-                )}
-                <div className="flex-1">
-                  <span
-                    className={`block font-medium ${
-                      state === "active" ? "text-primary" : state === "done" ? "text-on-surface" : "text-on-surface-variant"
-                    }`}
-                  >
-                    {s.label}
-                  </span>
-                  <StageCaption stage={s.key} active={activeStage} payload={lastPayload} snippetCount={snippetCount} />
                 </div>
+              )}
+              <div className="space-y-3 font-label text-sm">
+                {STAGES.map((s, i) => {
+                  const state = stateOf(s.key, activeStage, finished);
+                  const showConnector = i < STAGES.length - 1;
+                  return (
+                    <div key={s.key}>
+                      <div className="flex items-start gap-3">
+                        {state === "active" ? (
+                          <motion.div
+                            className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent mt-0.5"
+                            animate={{ rotate: 360 }}
+                            transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                          />
+                        ) : state === "done" ? (
+                          <span className="material-symbols-outlined text-primary text-[16px] mt-0.5">check_circle</span>
+                        ) : (
+                          <span className="material-symbols-outlined text-on-surface-variant/50 text-[16px] mt-0.5">
+                            {s.icon}
+                          </span>
+                        )}
+                        <div className="flex-1">
+                          <span
+                            className={`block font-medium ${
+                              state === "active" ? "text-primary" : state === "done" ? "text-on-surface" : "text-on-surface-variant"
+                            }`}
+                          >
+                            {s.label}
+                          </span>
+                          <StageCaption stage={s.key} active={activeStage} payload={lastPayload} snippetCount={snippetCount} />
+                        </div>
+                      </div>
+                      {showConnector && <div className="w-px h-3 bg-outline-variant/30 ml-2" />}
+                    </div>
+                  );
+                })}
               </div>
-              {showConnector && <div className="w-px h-3 bg-outline-variant/30 ml-2" />}
             </div>
-          );
-        })}
-      </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
