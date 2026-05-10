@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { AuthProvider } from "@/components/AuthContext";
 
 export const metadata: Metadata = {
   title: "LexisAI Architect",
@@ -24,7 +25,7 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-background text-on-background font-body antialiased flex flex-col h-screen overflow-hidden">
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

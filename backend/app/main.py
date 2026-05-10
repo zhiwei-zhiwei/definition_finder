@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.models.db import init_db
-from app.routes import documents, health, query
+from app.routes import auth, documents, health, queries, query
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -20,8 +20,10 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(query.router)
+app.include_router(queries.router)
 
 
 @app.on_event("startup")

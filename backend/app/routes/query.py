@@ -1,14 +1,17 @@
 import asyncio
+import json
 import logging
+import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import settings
 from app.models.db import SessionLocal
-from app.models.schema import Document
+from app.models.schema import Document, Query, User
 from app.services import prepare, retrieve, summarize
+from app.services.auth import get_current_user_optional
 from app.services.highlight import compute_spans
 from app.utils.sse import sse_event
 
@@ -26,11 +29,15 @@ class QueryRequest(BaseModel):
 
 
 @router.post("/query")
-async def query_stream(req: QueryRequest):
-    return EventSourceResponse(_query_stream(req), ping=15)
+async def query_stream(
+    req: QueryRequest,
+    user: User | None = Depends(get_current_user_optional),
+):
+    user_id = user.id if user is not None else None
+    return EventSourceResponse(_query_stream(req, user_id), ping=15)
 
 
-async def _query_stream(req: QueryRequest):
+async def _query_stream(req: QueryRequest, user_id: str | None):
     loop = asyncio.get_event_loop()
     try:
         with SessionLocal() as db:
@@ -96,16 +103,67 @@ async def _query_stream(req: QueryRequest):
         yield sse_event("stage", {"stage": "summarizing"})
         await asyncio.sleep(0)
 
+        summary_chunks: list[str] = []
         if not parent_texts:
-            yield sse_event("token", "No relevant context was found in this document.")
+            fallback = "No relevant context was found in this document."
+            summary_chunks.append(fallback)
+            yield sse_event("token", fallback)
         else:
             async for tok in _bridge_token_stream(loop, req.query, parent_texts, pages):
+                summary_chunks.append(tok)
                 yield sse_event("token", tok)
+
+        if user_id is not None:
+            try:
+                _persist_query(
+                    user_id=user_id,
+                    doc_id=req.doc_id,
+                    query_text=req.query,
+                    top_k=req.top_k,
+                    snippets_payload=snippets_payload,
+                    summary_text="".join(summary_chunks),
+                )
+            except Exception:
+                log.exception("Failed to cache query result")
 
         yield sse_event("done", {})
     except Exception as exc:
         log.exception("Query failed")
         yield sse_event("error", {"message": str(exc)})
+
+
+_KEY_TAKEAWAY_MARKER = "**Key Takeaway:**"
+
+
+def _extract_key_takeaway(text: str) -> str | None:
+    if _KEY_TAKEAWAY_MARKER not in text:
+        return None
+    tail = text.split(_KEY_TAKEAWAY_MARKER, 1)[1].strip()
+    return tail or None
+
+
+def _persist_query(
+    *,
+    user_id: str,
+    doc_id: str,
+    query_text: str,
+    top_k: int,
+    snippets_payload: list[dict],
+    summary_text: str,
+) -> None:
+    with SessionLocal() as db:
+        row = Query(
+            id=uuid.uuid4().hex,
+            user_id=user_id,
+            doc_id=doc_id,
+            query_text=query_text,
+            top_k=top_k,
+            snippets_json=json.dumps(snippets_payload),
+            summary_text=summary_text,
+            key_takeaway=_extract_key_takeaway(summary_text),
+        )
+        db.add(row)
+        db.commit()
 
 
 async def _bridge_token_stream(loop, query: str, parent_texts: list[str], pages: list[int]):

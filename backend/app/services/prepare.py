@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 
 from app.config import settings
 from app.models.db import SessionLocal
-from app.models.schema import ChildChunk, Document, ParentChunk
+from app.models.schema import ChildChunk, Document, ParentChunk, Query
 from app.services import chunker, embed, ingest, vectorstore
 from app.utils.sse import sse_event
 
@@ -36,6 +36,10 @@ async def prepare_document_stream(doc_id: str):
             yield sse_event("error", {"message": "document not found"})
             return
         filename = doc.filename
+        # Invalidate any cached query results for this doc — chunk IDs in
+        # snippets_json may drift if chunks are about to be (re)built.
+        db.query(Query).filter(Query.doc_id == doc_id).delete()
+        db.commit()
 
     stored_path = _resolve_file_path(doc_id, filename)
 

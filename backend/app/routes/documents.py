@@ -10,15 +10,19 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.db import SessionLocal, get_db
-from app.models.schema import Document
+from app.models.schema import Document, User
 from app.services import vectorstore
+from app.services.auth import get_current_user_optional
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 @router.post("")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(
+    file: UploadFile = File(...),
+    user: User | None = Depends(get_current_user_optional),
+):
     doc_id = uuid.uuid4().hex
     ext = Path(file.filename or "").suffix
     stored_path = settings.upload_path / f"{doc_id}{ext}"
@@ -38,6 +42,7 @@ async def upload_document(file: UploadFile = File(...)):
             mime=mime,
             size_bytes=size,
             status="ready",
+            user_id=user.id if user is not None else None,
         )
         db.add(doc)
         db.commit()
@@ -59,8 +64,19 @@ async def upload_document(file: UploadFile = File(...)):
 
 
 @router.get("")
-def list_documents(db: Session = Depends(get_db)):
-    rows = db.query(Document).order_by(Document.uploaded_at.desc()).limit(50).all()
+def list_documents(
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+):
+    if user is None:
+        return []
+    rows = (
+        db.query(Document)
+        .filter(Document.user_id == user.id)
+        .order_by(Document.uploaded_at.desc())
+        .limit(50)
+        .all()
+    )
     return [
         {
             "id": r.id,
@@ -126,10 +142,16 @@ def get_html_render(doc_id: str):
 
 
 @router.delete("/{doc_id}")
-def delete_document(doc_id: str, db: Session = Depends(get_db)):
+def delete_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+):
     r = db.get(Document, doc_id)
     if r is None:
         raise HTTPException(404, "not found")
+    if r.user_id is not None and (user is None or r.user_id != user.id):
+        raise HTTPException(403, "not yours")
     ext = Path(r.filename).suffix
     file_path = settings.upload_path / f"{doc_id}{ext}"
     cache_path = settings.cache_path / f"{doc_id}.html"

@@ -23,6 +23,17 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # Dev default — RFC 7518 wants ≥32 bytes for HS256. Override via env in prod.
+    JWT_SECRET: str = "dev-only-not-secret-change-me-please-32b"
+    JWT_ALG: str = "HS256"
+    JWT_EXP_SECONDS: int = 2_592_000  # 30 days
+
+    CODE_LENGTH: int = 6
+    CODE_TTL_SECONDS: int = 600  # 10 min
+    CODE_RESEND_SECONDS: int = 60
+    CODE_MAX_ATTEMPTS: int = 3
+    EMAIL_BACKEND: str = "console"  # future: "smtp" | "ses"
+
     @property
     def upload_path(self) -> Path:
         p = Path(self.UPLOAD_DIR).resolve()

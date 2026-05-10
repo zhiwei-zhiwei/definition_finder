@@ -1,5 +1,10 @@
 # Local data: uploads, Chroma vector store, SQLite
 data/
+# Timestamped data backups from backend/scripts/wipe_data.sh
+data.bak.*/
+
+# Playwright MCP session artifacts (snapshots, console logs)
+.playwright-mcp/
 
 # Local Claude Code config & worktrees
 .claude/
@@ -19,6 +24,7 @@ backend/.env.example
 # Node / Next.js
 **/node_modules/
 **/.next/
+**/tsconfig.tsbuildinfo
 
 # OS
 .DS_Store

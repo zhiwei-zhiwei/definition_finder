@@ -1,6 +1,12 @@
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
+function authHeaders(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const t = window.localStorage.getItem("lexisai_token");
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 export type DocumentRecord = {
   id: string;
   filename: string;
@@ -20,26 +26,70 @@ export type Snippet = {
   score: number;
   page_start: number | null;
   page_end: number | null;
-  bboxes: Array<{ page: number; x0: number; y0: number; x1: number; y1: number }>;
+  bboxes: Array<{
+    page: number;
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  }>;
   html_anchor: string | null;
   highlight_spans?: Array<[number, number]>;
 };
 
 export async function listDocuments(): Promise<DocumentRecord[]> {
-  const r = await fetch(`${API_BASE}/documents`);
+  const r = await fetch(`${API_BASE}/documents`, { headers: authHeaders() });
   if (!r.ok) throw new Error(`list failed: ${r.status}`);
   return r.json();
 }
 
 export async function getDocument(id: string): Promise<DocumentRecord> {
-  const r = await fetch(`${API_BASE}/documents/${id}`);
+  const r = await fetch(`${API_BASE}/documents/${id}`, {
+    headers: authHeaders(),
+  });
   if (!r.ok) throw new Error(`get failed: ${r.status}`);
   return r.json();
 }
 
 export async function deleteDocument(id: string): Promise<void> {
-  const r = await fetch(`${API_BASE}/documents/${id}`, { method: "DELETE" });
+  const r = await fetch(`${API_BASE}/documents/${id}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
   if (!r.ok) throw new Error(`delete failed: ${r.status}`);
+}
+
+export type CachedQueryRow = {
+  id: string;
+  query_text: string;
+  key_takeaway: string | null;
+  top_k: number;
+  created_at: string | null;
+};
+
+export type CachedQueryFull = CachedQueryRow & {
+  doc_id: string;
+  snippets: Snippet[];
+  summary_text: string;
+};
+
+export async function listQueries(docId: string): Promise<CachedQueryRow[]> {
+  const r = await fetch(
+    `${API_BASE}/queries?doc_id=${encodeURIComponent(docId)}`,
+    {
+      headers: authHeaders(),
+    },
+  );
+  if (!r.ok) throw new Error(`list queries failed: ${r.status}`);
+  return r.json();
+}
+
+export async function getQuery(queryId: string): Promise<CachedQueryFull> {
+  const r = await fetch(`${API_BASE}/queries/${encodeURIComponent(queryId)}`, {
+    headers: authHeaders(),
+  });
+  if (!r.ok) throw new Error(`get query failed: ${r.status}`);
+  return r.json();
 }
 
 export type SseHandlers = {
@@ -84,7 +134,9 @@ export async function consumeSSE(
         handlers.onDone?.(data);
         break;
       case "error":
-        handlers.onError?.(typeof data === "string" ? data : data?.message ?? "error");
+        handlers.onError?.(
+          typeof data === "string" ? data : (data?.message ?? "error"),
+        );
         break;
     }
   };
@@ -118,6 +170,7 @@ export async function uploadDocument(file: File): Promise<DocumentRecord> {
   fd.append("file", file);
   const r = await fetch(`${API_BASE}/documents`, {
     method: "POST",
+    headers: authHeaders(),
     body: fd,
   });
   if (!r.ok) throw new Error(`upload failed: ${r.status}`);
@@ -132,7 +185,7 @@ export async function runQuery(
 ) {
   const r = await fetch(`${API_BASE}/query`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ doc_id: docId, query, top_k: topK }),
   });
   return consumeSSE(r, handlers);
