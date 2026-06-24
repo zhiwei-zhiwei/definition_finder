@@ -8,20 +8,34 @@ from bs4 import BeautifulSoup
 from app.config import settings
 from app.models.db import SessionLocal
 from app.models.schema import ChildChunk, Document, ParentChunk, Query
-from app.services import chunker, embed, ingest, vectorstore
+from app.services import chunker, context, embed, ingest, vectorstore
 from app.utils.sse import sse_event
 
 log = logging.getLogger(__name__)
 
 
 def has_chunks(doc_id: str) -> bool:
+    """A doc counts as prepared only once an *embedded* child exists. Gating on
+    the embedding (not just any child row) means docs left over from the old
+    Chroma store — child rows but null embeddings — re-prepare on next query."""
     with SessionLocal() as db:
-        return db.query(ChildChunk).filter(ChildChunk.doc_id == doc_id).first() is not None
+        return (
+            db.query(ChildChunk.id)
+            .filter(ChildChunk.doc_id == doc_id, ChildChunk.embedding.isnot(None))
+            .first()
+            is not None
+        )
 
 
 def _resolve_file_path(doc_id: str, filename: str) -> Path:
     ext = Path(filename).suffix
     return settings.upload_path / f"{doc_id}{ext}"
+
+
+def _contextualized(ctx: str | None, text: str) -> str:
+    """Prepend the situating context to the chunk text (cookbook format). This is
+    what gets embedded; the bare `text` is what the user sees."""
+    return f"{ctx}\n\n{text}" if ctx else text
 
 
 async def prepare_document_stream(doc_id: str):
@@ -39,6 +53,10 @@ async def prepare_document_stream(doc_id: str):
         # Invalidate any cached query results for this doc — chunk IDs in
         # snippets_json may drift if chunks are about to be (re)built.
         db.query(Query).filter(Query.doc_id == doc_id).delete()
+        # Idempotent re-prepare: drop any prior chunks so deterministic IDs don't
+        # collide on re-insert (also the migration path off the old Chroma store).
+        db.query(ChildChunk).filter(ChildChunk.doc_id == doc_id).delete()
+        db.query(ParentChunk).filter(ParentChunk.doc_id == doc_id).delete()
         db.commit()
 
     stored_path = _resolve_file_path(doc_id, filename)
@@ -68,6 +86,17 @@ async def prepare_document_stream(doc_id: str):
     cache_file = settings.cache_path / f"{doc_id}.html"
     cache_file.write_text(enhanced_html, encoding="utf-8")
 
+    # Contextual retrieval: one situating blurb per parent (children inherit it),
+    # generated concurrently. No-op (empty map) when CONTEXTUAL_EMBEDDINGS=False.
+    yield sse_event("stage", {"stage": "contextualizing", "count": len(parents)})
+    await asyncio.sleep(0)
+    parent_ctx = await loop.run_in_executor(
+        None,
+        context.generate_parent_contexts,
+        extracted.full_text,
+        [(p.id, p.text) for p in parents],
+    )
+
     with SessionLocal() as db:
         for p in parents:
             db.add(
@@ -87,6 +116,7 @@ async def prepare_document_stream(doc_id: str):
                     parent_id=c.parent_id,
                     doc_id=doc_id,
                     text=c.text,
+                    context_text=parent_ctx.get(c.parent_id) or None,
                     bboxes_json=json.dumps(c.bboxes) if c.bboxes else None,
                     html_anchor=c.html_anchor,
                     token_count=c.token_count,
@@ -102,26 +132,16 @@ async def prepare_document_stream(doc_id: str):
     if total == 0:
         yield sse_event("stage", {"stage": "embedding", "progress": 1.0})
     else:
-        coll = vectorstore.collection_for(doc_id)
         for start in range(0, total, batch_size):
             batch = children[start : start + batch_size]
-            vecs = await loop.run_in_executor(None, embed.embed_batch, [c.text for c in batch])
-            coll.add(
-                ids=[c.id for c in batch],
-                embeddings=vecs,
-                documents=[c.text for c in batch],
-                metadatas=[
-                    {
-                        "parent_id": c.parent_id,
-                        "doc_id": c.doc_id,
-                        "page_start": c.page_start or 0,
-                        "page_end": c.page_end or 0,
-                        "has_bboxes": bool(c.bboxes),
-                        "html_anchor": c.html_anchor or "",
-                    }
-                    for c in batch
-                ],
-            )
+            texts = [_contextualized(parent_ctx.get(c.parent_id), c.text) for c in batch]
+            vecs = await loop.run_in_executor(None, embed.embed_batch, texts)
+            with SessionLocal() as db:
+                for c, vec in zip(batch, vecs):
+                    row = db.get(ChildChunk, c.id)
+                    if row is not None:
+                        row.embedding = vectorstore.pack(vec)
+                db.commit()
             progress = min(1.0, (start + len(batch)) / total)
             yield sse_event("stage", {"stage": "embedding", "progress": progress})
 

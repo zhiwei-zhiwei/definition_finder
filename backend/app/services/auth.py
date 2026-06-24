@@ -7,6 +7,7 @@ file evolves (e.g. revocation, refresh tokens, OAuth).
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import secrets
 import uuid
@@ -72,6 +73,21 @@ def generate_code() -> str:
     return str(n).zfill(settings.CODE_LENGTH)
 
 
+def generate_link_token() -> str:
+    return secrets.token_urlsafe(32)  # 256 bits of entropy
+
+
+def hash_token(plain: str) -> str:
+    # Link tokens carry full entropy, so a fast preimage-resistant SHA-256 is
+    # the right tool (unlike low-entropy passwords/OTPs, which need bcrypt). It
+    # also lets the route look the row up directly by hash instead of scanning.
+    return hashlib.sha256(plain.encode("utf-8")).hexdigest()
+
+
+def verify_token(plain: str, hashed: str) -> bool:
+    return secrets.compare_digest(hash_token(plain), hashed)
+
+
 def create_token(user_id: str) -> str:
     now = datetime.now(timezone.utc)
     payload = {
@@ -83,12 +99,38 @@ def create_token(user_id: str) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALG)
 
 
-def decode_token(tok: str) -> str | None:
+def decode_token(tok: str) -> dict | None:
     try:
-        payload = jwt.decode(tok, settings.JWT_SECRET, algorithms=[settings.JWT_ALG])
-        return payload.get("sub")
+        return jwt.decode(tok, settings.JWT_SECRET, algorithms=[settings.JWT_ALG])
     except jwt.PyJWTError:
         return None
+
+
+def _token_revoked(iat: int | None, password_changed_at: datetime | None) -> bool:
+    # A password reset bumps `password_changed_at`; any token minted before it is
+    # dead. Compare on whole seconds so the fresh token issued *at* reset time
+    # (its iat is truncated to int) isn't caught by sub-second drift.
+    if password_changed_at is None or iat is None:
+        return False
+    return iat < int(password_changed_at.replace(tzinfo=timezone.utc).timestamp())
+
+
+def resolve_user_from_token(token: str, db: Session) -> User | None:
+    """Decode a raw JWT and load its user, applying the reset-revocation check.
+    Shared by the header path and the `?token=` query-param path used by media
+    endpoints loaded in an <iframe> (which can't send an Authorization header)."""
+    payload = decode_token(token)
+    if not payload:
+        return None
+    uid = payload.get("sub")
+    if not uid:
+        return None
+    user = db.get(User, uid)
+    if user is None:
+        return None
+    if _token_revoked(payload.get("iat"), user.password_changed_at):
+        return None
+    return user
 
 
 def get_current_user_optional(
@@ -97,10 +139,7 @@ def get_current_user_optional(
 ) -> User | None:
     if not authorization or not authorization.lower().startswith("bearer "):
         return None
-    uid = decode_token(authorization[7:])
-    if not uid:
-        return None
-    return db.get(User, uid)
+    return resolve_user_from_token(authorization[7:], db)
 
 
 def get_current_user(user: User | None = Depends(get_current_user_optional)) -> User:

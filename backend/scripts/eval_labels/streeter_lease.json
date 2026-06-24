@@ -1,0 +1,72 @@
+[
+  {
+    "query": "What is the total monthly rent including fees?",
+    "gold": "total monthly rent of $4070.00"
+  },
+  {
+    "query": "What is the market rent before utilities are added?",
+    "gold": "Market Rent of $3880.00"
+  },
+  {
+    "query": "How much is the monthly utility fee?",
+    "gold": "utility fee of $190.00"
+  },
+  {
+    "query": "How much extra will I owe if I pay my rent after the fifth of the month?",
+    "gold": ["$10.00 per month", "increased $10.00"]
+  },
+  {
+    "query": "Is there a fee for getting locked out of my apartment?",
+    "gold": "$25 charge per occurrence"
+  },
+  {
+    "query": "What one-time administrative charge do I pay when signing the lease?",
+    "gold": "lease administration fee of $500"
+  },
+  {
+    "query": "What happens to my rent if I stay past the end of my lease?",
+    "gold": [
+      "150% of the highest monthly rental",
+      "150% of the current market rental"
+    ]
+  },
+  {
+    "query": "How long are overnight guests allowed to stay?",
+    "gold": "14 consecutive days"
+  },
+  {
+    "query": "Can I keep a dog in the unit, and what if it isn't approved?",
+    "gold": ["remove an illegal or unauthorized animal", "no animals"]
+  },
+  {
+    "query": "Where am I allowed to smoke and what is the penalty for violating it?",
+    "gold": ["15 feet from the building", "$250.00 fine"]
+  },
+  {
+    "query": "How many people may occupy a one-bedroom under the occupancy rules?",
+    "gold": "two persons per bedroom"
+  },
+  {
+    "query": "How much is billed back each month for cable and internet?",
+    "gold": "$75 per apartment"
+  },
+  {
+    "query": "If I make emergency repairs myself, how much can I deduct from rent?",
+    "gold": "deduct up to $500"
+  },
+  {
+    "query": "Is there a charge if the landlord has to file an eviction against me?",
+    "gold": "not to exceed $100"
+  },
+  {
+    "query": "At what time of day does the lease end on the final day?",
+    "gold": ["12:00 noon", "11:59 pm"]
+  },
+  {
+    "query": "Who is responsible for handling bed bug infestations?",
+    "gold": [
+      "share the responsibility in preventing and controlling bed bug",
+      "landlords and tenants share"
+    ]
+  }
+]

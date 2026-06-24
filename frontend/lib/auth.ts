@@ -72,13 +72,42 @@ async function readError(r: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
+export type SignupResult = { status: string; email: string };
+
 export async function apiSignup(input: {
   email: string;
   username: string;
   password: string;
-}): Promise<LoginResponse> {
+}): Promise<SignupResult> {
+  // Signup no longer logs the user in — it sends a verification email and the
+  // account stays inactive until the link is clicked.
   const r = await postJson("/auth/signup", input);
   if (!r.ok) throw new Error(await readError(r, `signup_failed_${r.status}`));
+  return r.json();
+}
+
+export async function apiVerifyEmail(token: string): Promise<LoginResponse> {
+  const r = await postJson("/auth/verify", { token });
+  if (!r.ok) throw new Error(await readError(r, `verify_failed_${r.status}`));
+  return r.json();
+}
+
+export async function apiResendVerification(email: string): Promise<void> {
+  const r = await postJson("/auth/verify/resend", { email });
+  if (!r.ok) throw new Error(await readError(r, `resend_failed_${r.status}`));
+}
+
+export async function apiForgotPassword(email: string): Promise<void> {
+  const r = await postJson("/auth/password/forgot", { email });
+  if (!r.ok) throw new Error(await readError(r, `forgot_failed_${r.status}`));
+}
+
+export async function apiResetPassword(
+  token: string,
+  password: string,
+): Promise<LoginResponse> {
+  const r = await postJson("/auth/password/reset", { token, password });
+  if (!r.ok) throw new Error(await readError(r, `reset_failed_${r.status}`));
   return r.json();
 }
 

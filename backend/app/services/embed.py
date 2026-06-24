@@ -17,5 +17,8 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
     client = _get_client()
-    resp = client.embeddings.create(model=settings.EMBED_MODEL, input=texts)
+    kwargs = {"model": settings.EMBED_MODEL, "input": texts}
+    if settings.EMBED_DIM:
+        kwargs["dimensions"] = settings.EMBED_DIM
+    resp = client.embeddings.create(**kwargs)
     return [d.embedding for d in resp.data]

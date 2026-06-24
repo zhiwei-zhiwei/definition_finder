@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.db import Base
@@ -15,6 +15,11 @@ class User(Base):
     username: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     # Null for users that have only ever logged in via email code.
     password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # False until the user clicks the verification link emailed at signup.
+    email_verified: Mapped[bool] = mapped_column(default=False, nullable=False)
+    # Bumped on password reset — JWTs issued before this are rejected, so a
+    # reset revokes every outstanding session (see auth.get_current_user_optional).
+    password_changed_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
 
 
@@ -63,6 +68,12 @@ class ChildChunk(Base):
     parent_id: Mapped[str] = mapped_column(ForeignKey("parent_chunks.id", ondelete="CASCADE"), index=True)
     doc_id: Mapped[str] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    # LLM-generated blurb situating this child's parent in the document. Prepended
+    # to `text` for embedding + BM25 (contextual retrieval); never shown to the user.
+    context_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Contextualized-text embedding, packed as little-endian float32 bytes. The
+    # vector store: brute-force cosine over these per-doc replaces Chroma.
+    embedding: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bboxes_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     html_anchor: Mapped[str | None] = mapped_column(String, nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -78,8 +89,10 @@ class EmailCode(Base):
     # Keyed by email (not user_id) so the table works pre-account if signup
     # ever needs verification. Lowercase contract enforced at insert time.
     email: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    # For "login" this holds the 6-digit OTP hash; for "verify"/"reset" it
+    # holds the bcrypt hash of a URL-safe link token.
     code_hash: Mapped[str] = mapped_column(String, nullable=False)
-    purpose: Mapped[str] = mapped_column(String, nullable=False)  # "login"
+    purpose: Mapped[str] = mapped_column(String, nullable=False)  # "login" | "verify" | "reset"
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     expires_at: Mapped[datetime] = mapped_column(nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

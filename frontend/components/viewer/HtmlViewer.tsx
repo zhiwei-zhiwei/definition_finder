@@ -3,6 +3,7 @@
 import DOMPurify from "dompurify";
 import { useEffect, useState } from "react";
 import { API_BASE, DocumentRecord } from "@/lib/api";
+import { authHeaders } from "@/lib/auth";
 
 export function HtmlViewer({ doc }: { doc: DocumentRecord }) {
   const [html, setHtml] = useState<string>("");
@@ -11,7 +12,9 @@ export function HtmlViewer({ doc }: { doc: DocumentRecord }) {
     let active = true;
     (async () => {
       try {
-        const r = await fetch(`${API_BASE}/documents/${doc.id}/html`);
+        const r = await fetch(`${API_BASE}/documents/${doc.id}/html`, {
+          headers: authHeaders(),
+        });
         if (!r.ok) throw new Error(`html fetch: ${r.status}`);
         const txt = await r.text();
         if (!active) return;
@@ -30,7 +33,9 @@ export function HtmlViewer({ doc }: { doc: DocumentRecord }) {
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between p-3 border-b border-outline-variant/30 bg-surface-container-low">
         <div className="flex items-center gap-2 text-sm text-on-surface-variant truncate">
-          <span className="material-symbols-outlined text-on-surface-variant">description</span>
+          <span className="material-symbols-outlined text-on-surface-variant">
+            description
+          </span>
           <span className="truncate">{doc.filename}</span>
         </div>
       </div>

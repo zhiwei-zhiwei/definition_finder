@@ -45,6 +45,11 @@ async def _query_stream(req: QueryRequest, user_id: str | None):
             if doc is None:
                 yield sse_event("error", {"message": "document not found"})
                 return
+            # Owned docs may only be queried by their owner; anon (unclaimed)
+            # docs stay open to whoever holds the id until claimed on sign-in.
+            if doc.user_id is not None and doc.user_id != user_id:
+                yield sse_event("error", {"message": "forbidden"})
+                return
 
         # 0. First-query preparation: extract + chunk + embed, cached for reuse.
         if not prepare.has_chunks(req.doc_id):

@@ -9,8 +9,16 @@ type StageSpec = { key: string; label: string; icon: string };
 const STAGES: StageSpec[] = [
   { key: "embedding_query", label: "Embedding your query", icon: "bolt" },
   { key: "searching", label: "Searching candidate passages", icon: "search" },
-  { key: "consolidating", label: "Consolidating by parent context", icon: "hub" },
-  { key: "fetching_context", label: "Fetching targeted context", icon: "filter_alt" },
+  {
+    key: "consolidating",
+    label: "Consolidating by parent context",
+    icon: "hub",
+  },
+  {
+    key: "fetching_context",
+    label: "Fetching targeted context",
+    icon: "filter_alt",
+  },
   { key: "summarizing", label: "Synthesizing summary", icon: "psychology" },
 ];
 
@@ -19,6 +27,7 @@ const PREP_STAGES: Record<string, string> = {
   cleaning: "Cleaning text",
   chunking_parents: "Chunking (parents)",
   chunking_children: "Chunking (children)",
+  contextualizing: "Adding context",
   embedding: "Embedding document",
 };
 
@@ -29,7 +38,11 @@ type Props = {
   finished: boolean;
 };
 
-function stateOf(stageKey: string, active: string | null, finished: boolean): "pending" | "active" | "done" {
+function stateOf(
+  stageKey: string,
+  active: string | null,
+  finished: boolean,
+): "pending" | "active" | "done" {
   const order = STAGES.findIndex((s) => s.key === stageKey);
   const activeIdx = active ? STAGES.findIndex((s) => s.key === active) : -1;
   if (finished) return "done";
@@ -39,8 +52,14 @@ function stateOf(stageKey: string, active: string | null, finished: boolean): "p
   return "pending";
 }
 
-export function PipelineVisualizer({ activeStage, lastPayload, snippetCount, finished }: Props) {
-  const prepLabel = activeStage && PREP_STAGES[activeStage] ? PREP_STAGES[activeStage] : null;
+export function PipelineVisualizer({
+  activeStage,
+  lastPayload,
+  snippetCount,
+  finished,
+}: Props) {
+  const prepLabel =
+    activeStage && PREP_STAGES[activeStage] ? PREP_STAGES[activeStage] : null;
   const progressPct =
     prepLabel && typeof lastPayload?.progress === "number"
       ? Math.round(lastPayload.progress * 100)
@@ -65,7 +84,9 @@ export function PipelineVisualizer({ activeStage, lastPayload, snippetCount, fin
         aria-controls="analysis-engine-stages"
         className="font-headline font-semibold text-on-surface w-full flex items-center gap-2 text-left"
       >
-        <span className="material-symbols-outlined text-primary text-sm">psychology</span>
+        <span className="material-symbols-outlined text-primary text-sm">
+          psychology
+        </span>
         Analysis Engine
         <span className="material-symbols-outlined text-on-surface-variant text-[18px] ml-auto">
           {collapsed ? "expand_more" : "expand_less"}
@@ -87,7 +108,11 @@ export function PipelineVisualizer({ activeStage, lastPayload, snippetCount, fin
                   <motion.div
                     className="w-3 h-3 rounded-full border-2 border-primary border-t-transparent"
                     animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                    transition={{
+                      repeat: Infinity,
+                      duration: 0.8,
+                      ease: "linear",
+                    }}
                   />
                   <span>
                     Preparing document (first-time only): {prepLabel}
@@ -106,10 +131,16 @@ export function PipelineVisualizer({ activeStage, lastPayload, snippetCount, fin
                           <motion.div
                             className="w-4 h-4 rounded-full border-2 border-primary border-t-transparent mt-0.5"
                             animate={{ rotate: 360 }}
-                            transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                            transition={{
+                              repeat: Infinity,
+                              duration: 0.8,
+                              ease: "linear",
+                            }}
                           />
                         ) : state === "done" ? (
-                          <span className="material-symbols-outlined text-primary text-[16px] mt-0.5">check_circle</span>
+                          <span className="material-symbols-outlined text-primary text-[16px] mt-0.5">
+                            check_circle
+                          </span>
                         ) : (
                           <span className="material-symbols-outlined text-on-surface-variant/50 text-[16px] mt-0.5">
                             {s.icon}
@@ -118,15 +149,26 @@ export function PipelineVisualizer({ activeStage, lastPayload, snippetCount, fin
                         <div className="flex-1">
                           <span
                             className={`block font-medium ${
-                              state === "active" ? "text-primary" : state === "done" ? "text-on-surface" : "text-on-surface-variant"
+                              state === "active"
+                                ? "text-primary"
+                                : state === "done"
+                                  ? "text-on-surface"
+                                  : "text-on-surface-variant"
                             }`}
                           >
                             {s.label}
                           </span>
-                          <StageCaption stage={s.key} active={activeStage} payload={lastPayload} snippetCount={snippetCount} />
+                          <StageCaption
+                            stage={s.key}
+                            active={activeStage}
+                            payload={lastPayload}
+                            snippetCount={snippetCount}
+                          />
                         </div>
                       </div>
-                      {showConnector && <div className="w-px h-3 bg-outline-variant/30 ml-2" />}
+                      {showConnector && (
+                        <div className="w-px h-3 bg-outline-variant/30 ml-2" />
+                      )}
                     </div>
                   );
                 })}
@@ -153,20 +195,32 @@ function StageCaption({
   const isActive = stage === active && payload;
   if (!isActive) {
     if (stage === "searching" && snippetCount > 0) {
-      return <span className="text-on-surface-variant text-[11px]">Returned {snippetCount} snippets</span>;
+      return (
+        <span className="text-on-surface-variant text-[11px]">
+          Returned {snippetCount} snippets
+        </span>
+      );
     }
     return null;
   }
   const p = payload as StageEvent;
   if (stage === "searching" && p.top_k) {
-    return <span className="text-on-surface-variant text-[11px]">Top-K = {p.top_k}</span>;
+    return (
+      <span className="text-on-surface-variant text-[11px]">
+        Top-K = {p.top_k}
+      </span>
+    );
   }
   if (stage === "consolidating" && p.parent_votes) {
     const items = Object.entries(p.parent_votes)
       .map(([k, v]) => `${k}:${v}`)
       .slice(0, 3)
       .join(", ");
-    return <span className="text-on-surface-variant text-[11px]">Votes: {items || "—"}</span>;
+    return (
+      <span className="text-on-surface-variant text-[11px]">
+        Votes: {items || "—"}
+      </span>
+    );
   }
   if (stage === "fetching_context" && p.winning_parents) {
     return (
@@ -176,10 +230,18 @@ function StageCaption({
     );
   }
   if (stage === "summarizing") {
-    return <span className="text-on-surface-variant text-[11px]">Generating summary...</span>;
+    return (
+      <span className="text-on-surface-variant text-[11px]">
+        Generating summary...
+      </span>
+    );
   }
   if (stage === "embedding_query") {
-    return <span className="text-on-surface-variant text-[11px]">{p.message ?? ""}</span>;
+    return (
+      <span className="text-on-surface-variant text-[11px]">
+        {p.message ?? ""}
+      </span>
+    );
   }
   return null;
 }

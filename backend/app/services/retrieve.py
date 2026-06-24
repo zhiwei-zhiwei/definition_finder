@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.schema import ChildChunk, ParentChunk
 from app.services import bm25 as bm25_service
+from app.services import vectorstore
 from app.services.embed import embed_batch
-from app.services.vectorstore import collection_for
 
 
 @dataclass
@@ -28,41 +28,35 @@ def embed_query(query: str) -> list[float]:
     return qvec
 
 
-def search_with_vec(doc_id: str, qvec: list[float], top_k: int) -> list[Hit]:
-    coll = collection_for(doc_id)
-    res = coll.query(query_embeddings=[qvec], n_results=top_k)
-
-    ids = res["ids"][0] if res["ids"] else []
-    docs = res["documents"][0] if res.get("documents") else []
-    metas = res["metadatas"][0] if res.get("metadatas") else []
-    dists = res["distances"][0] if res.get("distances") else [0.0] * len(ids)
-
-    hits: list[Hit] = []
-    for cid, text, meta, dist in zip(ids, docs, metas, dists):
-        bboxes_raw = meta.get("bboxes_json") or "[]"
+def _hydrate_hits(db: Session, scores: dict[str, float], order: list[str]) -> list[Hit]:
+    """Build Hits for `order` (child ids, best first), pulling child text + bboxes
+    and the parent's page span from SQLite in one pass. Children don't store their
+    own page columns — the page span lives on the parent."""
+    if not order:
+        return []
+    rows = (
+        db.query(ChildChunk, ParentChunk.page_start, ParentChunk.page_end)
+        .join(ParentChunk, ChildChunk.parent_id == ParentChunk.id)
+        .filter(ChildChunk.id.in_(order))
+        .all()
+    )
+    by_id: dict[str, Hit] = {}
+    for child, page_start, page_end in rows:
         try:
-            bboxes = json.loads(bboxes_raw)
+            bboxes = json.loads(child.bboxes_json) if child.bboxes_json else []
         except Exception:
             bboxes = []
-        ps = meta.get("page_start")
-        pe = meta.get("page_end")
-        hits.append(
-            Hit(
-                child_id=cid,
-                parent_id=meta.get("parent_id", ""),
-                text=text,
-                score=float(1.0 - dist) if dist is not None else 0.0,
-                page_start=ps if ps else None,
-                page_end=pe if pe else None,
-                bboxes=bboxes,
-                html_anchor=meta.get("html_anchor") or None,
-            )
+        by_id[child.id] = Hit(
+            child_id=child.id,
+            parent_id=child.parent_id,
+            text=child.text,
+            score=scores.get(child.id, 0.0),
+            page_start=page_start,
+            page_end=page_end,
+            bboxes=bboxes,
+            html_anchor=child.html_anchor,
         )
-    return hits
-
-
-def search(doc_id: str, query: str, top_k: int) -> list[Hit]:
-    return search_with_vec(doc_id, embed_query(query), top_k)
+    return [by_id[cid] for cid in order if cid in by_id]
 
 
 def _rrf_merge(rankings: list[list[str]], k: int = 60) -> dict[str, float]:
@@ -93,44 +87,23 @@ def hybrid_search(
       reflects the hybrid ranking.
     """
     n = candidate_n or max(top_k * 4, 20)
-    vec_hits = search_with_vec(doc_id, qvec, n)
-    bm25_hits = bm25_service.bm25_search(db, doc_id, query_text, n)
+    vec_ranked = vectorstore.search(db, doc_id, qvec, n)
+    bm25_ranked = bm25_service.bm25_search(db, doc_id, query_text, n)
 
     fused = _rrf_merge(
         [
-            [h.child_id for h in vec_hits],
-            [cid for cid, _ in bm25_hits],
+            [cid for cid, _ in vec_ranked],
+            [cid for cid, _ in bm25_ranked],
         ]
     )
     if not fused:
         return []
 
-    by_id: dict[str, Hit] = {h.child_id: h for h in vec_hits}
-    missing = [cid for cid in fused if cid not in by_id]
-    if missing:
-        rows = db.query(ChildChunk).filter(ChildChunk.id.in_(missing)).all()
-        for r in rows:
-            by_id[r.id] = Hit(
-                child_id=r.id,
-                parent_id=r.parent_id,
-                text=r.text,
-                score=0.0,
-                page_start=None,
-                page_end=None,
-                bboxes=[],
-                html_anchor=r.html_anchor,
-            )
-
-    ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)
+    ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)[:top_k]
     top_score = ranked[0][1] if ranked else 1.0
-    out: list[Hit] = []
-    for cid, fused_score in ranked[:top_k]:
-        h = by_id.get(cid)
-        if h is None:
-            continue
-        h.score = fused_score / top_score if top_score > 0 else 0.0
-        out.append(h)
-    return out
+    # Normalize by the top hit so the UI's percentage badge stays in [0, 1].
+    scores = {cid: (s / top_score if top_score > 0 else 0.0) for cid, s in ranked}
+    return _hydrate_hits(db, scores, [cid for cid, _ in ranked])
 
 
 def consolidate(hits: list[Hit], threshold: int | None = None) -> tuple[list[str], dict[str, int]]:

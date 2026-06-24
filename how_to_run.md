@@ -13,12 +13,12 @@ Each has its own dependency store; nothing is installed globally.
 
 Install once on your machine (the project itself stays isolated):
 
-| Tool | Install |
-|---|---|
-| Python 3.11 | `brew install python@3.11` or pyenv |
-| `uv` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Node.js ≥ 18 | `brew install node` |
-| `pnpm` | `npm install -g pnpm` (or `corepack enable pnpm`) |
+| Tool         | Install                                            |
+| ------------ | -------------------------------------------------- |
+| Python 3.11  | `brew install python@3.11` or pyenv                |
+| `uv`         | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Node.js ≥ 18 | `brew install node`                                |
+| `pnpm`       | `npm install -g pnpm` (or `corepack enable pnpm`)  |
 
 Verify:
 
@@ -102,7 +102,7 @@ Open **http://localhost:3000** in your browser.
    Click **Upload document** and pick a PDF / DOCX / PPTX / HTML /
    image — anything Docling supports.
 2. You'll see live pipeline stages (`extracting → cleaning →
-   chunking_parents → chunking_children → embedding → ready`).
+chunking_parents → chunking_children → embedding → ready`).
 3. Once the doc appears in the list, click it. The left column loads
    the rendered document (PDF via `react-pdf`, everything else via the
    Docling HTML render).
@@ -119,14 +119,14 @@ Open **http://localhost:3000** in your browser.
 
 ## 4. Common tasks
 
-| Task | Command |
-|---|---|
-| Run backend tests | `cd backend && source .venv/bin/activate && pytest` |
-| Build frontend for prod | `cd frontend && pnpm build && pnpm start` |
-| Wipe all local data | `rm -rf data/chroma data/uploads data/cache data/app.db` |
-| Delete a specific doc | use the drawer's trash icon, or `curl -X DELETE http://localhost:8000/documents/<id>` |
-| Update backend deps | `cd backend && uv pip install -e ".[dev]"` |
-| Update frontend deps | `cd frontend && pnpm install` |
+| Task                    | Command                                                                               |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| Run backend tests       | `cd backend && source .venv/bin/activate && pytest`                                   |
+| Build frontend for prod | `cd frontend && pnpm build && pnpm start`                                             |
+| Wipe all local data     | `rm -rf data/chroma data/uploads data/cache data/app.db`                              |
+| Delete a specific doc   | use the drawer's trash icon, or `curl -X DELETE http://localhost:8000/documents/<id>` |
+| Update backend deps     | `cd backend && uv pip install -e ".[dev]"`                                            |
+| Update frontend deps    | `cd frontend && pnpm install`                                                         |
 
 ---
 
@@ -144,6 +144,12 @@ CHILD_OVERLAP=50
 DEFAULT_TOP_K=5
 PARENT_CONSOLIDATION_THRESHOLD=3
 CORS_ORIGINS=http://localhost:3000
+
+# Email (account verification + password reset)
+EMAIL_BACKEND=console          # "console" logs links to the terminal; "resend" delivers for real
+RESEND_API_KEY=                # required when EMAIL_BACKEND=resend
+EMAIL_FROM=LexisAI <onboarding@resend.dev>
+FRONTEND_URL=http://localhost:3000   # base URL the verify/reset links point to
 ```
 
 `frontend/.env.local`:
@@ -159,8 +165,14 @@ NEXT_PUBLIC_API_BASE=http://localhost:8000
 - **`OPENAI_API_KEY` unset** — upload works (extraction/chunking only),
   but `/query` fails with a 401. Fill in `backend/.env` and restart
   uvicorn.
+- **Signup says "check your email" but nothing arrives** — with the
+  default `EMAIL_BACKEND=console`, the verification (and password-reset)
+  link is **printed in the backend terminal**, not emailed. Copy it from
+  there and open it. For real delivery set `EMAIL_BACKEND=resend` plus
+  `RESEND_API_KEY` / `EMAIL_FROM` and restart uvicorn. New accounts can't
+  sign in until the link is clicked (`403 email_unverified` otherwise).
 - **`pnpm: command not found`** — install it globally (`npm install -g
-  pnpm`) or via Corepack (`corepack enable pnpm`).
+pnpm`) or via Corepack (`corepack enable pnpm`).
 - **First upload is slow** — Docling downloads model weights on first
   run. Subsequent uploads are fast.
 - **CORS error in browser console** — make sure `CORS_ORIGINS` in

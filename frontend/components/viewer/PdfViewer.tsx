@@ -1,14 +1,26 @@
 "use client";
 
 import { API_BASE, DocumentRecord } from "@/lib/api";
+import { getToken } from "@/lib/auth";
 
-export function PdfViewer({ doc, page }: { doc: DocumentRecord; page: number | null }) {
-  const src = `${API_BASE}/documents/${doc.id}/file${page ? `#page=${page}` : ""}`;
+export function PdfViewer({
+  doc,
+  page,
+}: {
+  doc: DocumentRecord;
+  page: number | null;
+}) {
+  // An <iframe> can't send an Authorization header, so owned docs are
+  // authorized via the JWT in the query string (query must precede #fragment).
+  const token = getToken();
+  const src = `${API_BASE}/documents/${doc.id}/file${token ? `?token=${encodeURIComponent(token)}` : ""}${page ? `#page=${page}` : ""}`;
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between p-3 border-b border-outline-variant/30 bg-surface-container-low">
         <div className="flex items-center gap-2 text-sm text-on-surface-variant truncate">
-          <span className="material-symbols-outlined text-on-surface-variant">description</span>
+          <span className="material-symbols-outlined text-on-surface-variant">
+            description
+          </span>
           <span className="truncate">{doc.filename}</span>
         </div>
       </div>

@@ -8,6 +8,8 @@ data.bak.*/
 
 # Local Claude Code config & worktrees
 .claude/
+# CodeGraph local index
+.codegraph/
 
 # Secrets — never commit
 **/.env

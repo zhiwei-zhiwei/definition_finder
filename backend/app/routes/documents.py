@@ -11,11 +11,18 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.db import SessionLocal, get_db
 from app.models.schema import Document, User
-from app.services import vectorstore
-from app.services.auth import get_current_user_optional
+from app.services.auth import get_current_user_optional, resolve_user_from_token
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+def _authorize_doc(doc: Document, user: User | None) -> None:
+    """Owned docs require the matching signed-in user. Anonymous (unclaimed,
+    user_id IS NULL) uploads stay readable by whoever holds the id until they're
+    claimed on sign-in. Raises 403 otherwise."""
+    if doc.user_id is not None and (user is None or doc.user_id != user.id):
+        raise HTTPException(403, "not yours")
 
 
 @router.post("")
@@ -92,10 +99,15 @@ def list_documents(
 
 
 @router.get("/{doc_id}")
-def get_document(doc_id: str, db: Session = Depends(get_db)):
+def get_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+):
     r = db.get(Document, doc_id)
     if r is None:
         raise HTTPException(404, "not found")
+    _authorize_doc(r, user)
     return {
         "id": r.id,
         "filename": r.filename,
@@ -110,10 +122,20 @@ def get_document(doc_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/{doc_id}/file")
-def download_file(doc_id: str, db: Session = Depends(get_db)):
+def download_file(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+    token: str | None = None,
+):
     r = db.get(Document, doc_id)
     if r is None:
         raise HTTPException(404, "not found")
+    # The PDF viewer loads this URL in an <iframe>, which can't attach an
+    # Authorization header — fall back to the JWT passed as ?token=.
+    if user is None and token:
+        user = resolve_user_from_token(token, db)
+    _authorize_doc(r, user)
     ext = Path(r.filename).suffix
     path = settings.upload_path / f"{doc_id}{ext}"
     if not path.exists():
@@ -134,7 +156,18 @@ _HTML_PLACEHOLDER = (
 
 
 @router.get("/{doc_id}/html", response_class=HTMLResponse)
-def get_html_render(doc_id: str):
+def get_html_render(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+    token: str | None = None,
+):
+    r = db.get(Document, doc_id)
+    if r is None:
+        raise HTTPException(404, "not found")
+    if user is None and token:
+        user = resolve_user_from_token(token, db)
+    _authorize_doc(r, user)
     path = settings.cache_path / f"{doc_id}.html"
     if not path.exists():
         return HTMLResponse(_HTML_PLACEHOLDER)
@@ -150,8 +183,7 @@ def delete_document(
     r = db.get(Document, doc_id)
     if r is None:
         raise HTTPException(404, "not found")
-    if r.user_id is not None and (user is None or r.user_id != user.id):
-        raise HTTPException(403, "not yours")
+    _authorize_doc(r, user)
     ext = Path(r.filename).suffix
     file_path = settings.upload_path / f"{doc_id}{ext}"
     cache_path = settings.cache_path / f"{doc_id}.html"
@@ -160,7 +192,7 @@ def delete_document(
             p.unlink(missing_ok=True)
         except Exception:
             pass
-    vectorstore.delete_collection(doc_id)
+    # Embeddings live on child_chunks; the cascade delete below removes them.
     db.delete(r)
     db.commit()
     return JSONResponse({"ok": True})

@@ -28,7 +28,7 @@ def bm25_search(db: Session, doc_id: str, query: str, top_n: int) -> list[tuple[
     Returns [(child_id, score), ...] sorted by score desc, length <= top_n.
     """
     rows = (
-        db.query(ChildChunk.id, ChildChunk.text)
+        db.query(ChildChunk.id, ChildChunk.text, ChildChunk.context_text)
         .filter(ChildChunk.doc_id == doc_id)
         .all()
     )
@@ -38,7 +38,9 @@ def bm25_search(db: Session, doc_id: str, query: str, top_n: int) -> list[tuple[
     if not qtokens:
         return []
     ids = [r.id for r in rows]
-    corpus = [tokenize(r.text) or [""] for r in rows]
+    # Contextual BM25: index the situating context alongside the chunk text so
+    # lexical matches in either field count (mirrors the cookbook's multi_match).
+    corpus = [tokenize(f"{r.context_text or ''} {r.text}") or [""] for r in rows]
     bm25 = BM25Okapi(corpus)
     scores = bm25.get_scores(qtokens)
     ranked = sorted(zip(ids, scores), key=lambda x: x[1], reverse=True)

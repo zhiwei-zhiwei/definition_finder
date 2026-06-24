@@ -9,7 +9,7 @@ type Props = {
   onLoggedIn?: (claimedDocIds: string[]) => void;
 };
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "forgot";
 type SigninMethod = "password" | "code";
 type CodeStep = "request" | "verify";
 
@@ -49,6 +49,8 @@ function mapServerError(detail: string): string {
       return "That code is invalid or expired.";
     case "no_account":
       return "No account found for this email.";
+    case "email_unverified":
+      return "Please verify your email first — check your inbox for the link.";
     case "password_weak":
       return "Password must be 8+ chars with an uppercase letter and a symbol.";
     default:
@@ -63,6 +65,8 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
     loginWithPassword,
     loginWithCode,
     requestCode,
+    requestPasswordReset,
+    resendVerification,
     logout,
   } = useAuth();
   const [mode, setMode] = useState<Mode>("signin");
@@ -74,7 +78,9 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showCreateLink, setShowCreateLink] = useState(false);
+  const [showResendVerify, setShowResendVerify] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     username?: string;
@@ -95,7 +101,9 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
       setPassword("");
       setCode("");
       setError(null);
+      setNotice(null);
       setShowCreateLink(false);
+      setShowResendVerify(false);
       setFieldErrors({});
       setBusy(false);
       setResendIn(0);
@@ -119,21 +127,25 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
     }
   }, [signinMethod, codeStep]);
 
+  function clearTransient() {
+    setError(null);
+    setNotice(null);
+    setShowCreateLink(false);
+    setShowResendVerify(false);
+    setFieldErrors({});
+  }
+
   function switchMode(next: Mode) {
     setMode(next);
     setPassword("");
     setCode("");
-    setError(null);
-    setShowCreateLink(false);
-    setFieldErrors({});
+    clearTransient();
     setCodeStep("request");
   }
 
   function switchSigninMethod(next: SigninMethod) {
     setSigninMethod(next);
-    setError(null);
-    setShowCreateLink(false);
-    setFieldErrors({});
+    clearTransient();
     setCodeStep("request");
     setCode("");
   }
@@ -149,6 +161,8 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
           "Password must be 8+ chars with an uppercase letter and a symbol.";
       if (!USERNAME_RE.test(username))
         fe.username = "3–20 chars, letters/numbers/_/- only.";
+    } else if (mode === "forgot") {
+      // email-only — nothing else to validate
     } else if (signinMethod === "password") {
       if (!password) fe.password = "Enter your password.";
     } else {
@@ -168,11 +182,18 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
     setBusy(true);
     setError(null);
     setShowCreateLink(false);
+    setShowResendVerify(false);
     try {
-      if (mode === "signup") {
+      if (mode === "forgot") {
+        await requestPasswordReset(email.trim());
+        setNotice(
+          "If an account exists for that email, we've sent a password reset link. Check your inbox (and spam folder).",
+        );
+      } else if (mode === "signup") {
         const r = await signup({ email: email.trim(), username, password });
-        onLoggedIn?.(r.claimedDocIds);
-        onClose();
+        setNotice(
+          `Almost there — we sent a verification link to ${r.email}. Click it to activate your account, then sign in.`,
+        );
       } else if (signinMethod === "password") {
         const r = await loginWithPassword({ email: email.trim(), password });
         onLoggedIn?.(r.claimedDocIds);
@@ -194,6 +215,9 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
         setFieldErrors((f) => ({ ...f, username: mapServerError(detail) }));
       } else if (mode === "signup" && detail === "password_weak") {
         setFieldErrors((f) => ({ ...f, password: mapServerError(detail) }));
+      } else if (detail === "email_unverified") {
+        setError(mapServerError(detail));
+        setShowResendVerify(true);
       } else if (signinMethod === "code" && detail === "no_account") {
         setError(mapServerError(detail));
         setShowCreateLink(true);
@@ -236,21 +260,46 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
     }
   }
 
+  async function handleResendVerification() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await resendVerification(email.trim());
+      setShowResendVerify(false);
+      setNotice(`We re-sent the verification link to ${email.trim()}.`);
+    } catch {
+      setError("Could not resend right now — try again shortly.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const isAlreadyIn = !!user;
 
-  // Submit button label — varies across the four sub-flows.
+  // Submit button label — varies across the sub-flows.
   const submitLabel = (() => {
     if (busy) {
       if (mode === "signup") return "Creating account…";
+      if (mode === "forgot") return "Sending link…";
       if (signinMethod === "password") return "Signing in…";
       if (codeStep === "request") return "Sending code…";
       return "Verifying…";
     }
     if (mode === "signup") return "Create account";
+    if (mode === "forgot") return "Send reset link";
     if (signinMethod === "password") return "Sign in";
     if (codeStep === "request") return "Send code";
     return "Verify & sign in";
   })();
+
+  const heading = isAlreadyIn
+    ? "You're signed in"
+    : mode === "signup"
+      ? "Create an account"
+      : mode === "forgot"
+        ? "Reset your password"
+        : "Sign in to LexisAI";
 
   return (
     <>
@@ -275,11 +324,7 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
         >
           <div className="flex items-center justify-between px-6 pt-6 pb-2">
             <h2 className="font-headline text-lg font-semibold text-on-surface">
-              {isAlreadyIn
-                ? "You're signed in"
-                : mode === "signup"
-                  ? "Create an account"
-                  : "Sign in to LexisAI"}
+              {heading}
             </h2>
             <button
               type="button"
@@ -311,12 +356,34 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
                 Sign out
               </button>
             </div>
+          ) : notice ? (
+            <div className="px-6 pb-6 pt-2 flex flex-col gap-4">
+              <div className="text-sm text-on-surface bg-primary/5 border border-primary/20 rounded-md px-4 py-3 flex items-start gap-2">
+                <span className="material-symbols-outlined text-[18px] text-blue-700">
+                  mark_email_read
+                </span>
+                <span>{notice}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setNotice(null);
+                  setMode("signin");
+                  setSigninMethod("password");
+                }}
+                className="gradient-primary text-white text-sm font-medium px-4 py-2.5 rounded-xl hover:opacity-90"
+              >
+                Back to sign in
+              </button>
+            </div>
           ) : (
             <form
               onSubmit={handleSubmit}
               className="px-6 pb-6 pt-2 flex flex-col gap-4"
             >
-              <ModeToggle mode={mode} onChange={switchMode} disabled={busy} />
+              {mode !== "forgot" && (
+                <ModeToggle mode={mode} onChange={switchMode} disabled={busy} />
+              )}
 
               {mode === "signin" && (
                 <div className="flex gap-1 border-b border-outline-variant/30 -mx-6 px-6">
@@ -333,9 +400,18 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
                 </div>
               )}
 
+              {mode === "forgot" && (
+                <p className="text-xs text-on-surface-variant -mt-1">
+                  Enter your account email and we&apos;ll send a link to set a
+                  new password.
+                </p>
+              )}
+
               <div className="flex flex-col gap-3">
                 {/* Email field — read-only on the verify step so the user can't edit by mistake */}
-                {signinMethod === "code" && codeStep === "verify" ? (
+                {mode === "signin" &&
+                signinMethod === "code" &&
+                codeStep === "verify" ? (
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-medium text-on-surface-variant">
@@ -420,6 +496,16 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
                     {mode === "signup" && (
                       <PasswordChecklist password={password} />
                     )}
+                    {mode === "signin" && signinMethod === "password" && (
+                      <button
+                        type="button"
+                        onClick={() => switchMode("forgot")}
+                        disabled={busy}
+                        className="self-end text-xs text-blue-700 hover:underline mt-1"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -473,6 +559,16 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
                       Create one
                     </button>
                   )}
+                  {showResendVerify && (
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={busy}
+                      className="text-blue-700 hover:underline whitespace-nowrap"
+                    >
+                      Resend link
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -503,7 +599,16 @@ export function LoginModal({ open, onClose, onLoggedIn }: Props) {
                 )}
 
               <div className="flex items-center justify-between text-xs">
-                {mode === "signin" ? (
+                {mode === "forgot" ? (
+                  <button
+                    type="button"
+                    onClick={() => switchMode("signin")}
+                    disabled={busy}
+                    className="text-blue-700 hover:underline"
+                  >
+                    ← Back to sign in
+                  </button>
+                ) : mode === "signin" ? (
                   <button
                     type="button"
                     onClick={() => switchMode("signup")}
@@ -676,3 +781,5 @@ function PasswordChecklist({ password }: { password: string }) {
     </ul>
   );
 }
+
+export { PasswordChecklist };
