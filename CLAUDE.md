@@ -120,3 +120,12 @@ The PDF viewer uses `react-pdf`'s reported page dimensions (which include curren
 - **Re-prepare on chunk-config change** isn't automatic. If you change `CHILD_TOKENS` / `PARENT_TOKENS` / `EMBED_DIM` / `CONTEXTUAL_EMBEDDINGS`, already-prepared docs keep their old chunks + vectors (the gate is "any child row has an embedding"). Delete + re-upload (or null out the doc's `child_chunks.embedding`) to pick up the change.
 - **CORS** is driven by the comma-separated `CORS_ORIGINS` env var; default permits only `http://localhost:3000`.
 - **Without `OPENAI_API_KEY`**, upload still works but `/query` 401s on the first embed call (query embedding) — fail mode is loud, not silent.
+
+## Assistant response & code style
+
+Two external Claude Code skills shape how an assistant should work in this repo. The concrete rules are inlined below rather than fetched live from the upstream repos on every session, so this convention doesn't silently change if upstream changes — see the source repos for full rationale or to propose an update to this section.
+
+- **Response style** — modeled on [`i-have-adhd`](https://github.com/ayghri/i-have-adhd): lead with the answer or next action, not a preamble; number steps for multi-step work; no "let me..." throat-clearing and no closing recap unless something actually changed. Keep responses scannable.
+- **Code style** — modeled on [`andrej-karpathy-skills`](https://github.com/forrestchang/andrej-karpathy-skills): state assumptions and tradeoffs instead of silently guessing, and ask when genuinely unsure; write the minimum code that solves the problem, no speculative abstractions; touch only what the task requires, no drive-by refactors; define a verifiable success criterion (a test, a repro) and work until it passes.
+
+Not adopted: `i-have-adhd`'s `AGENTS.md` also carries rules for commenting on *that* repo's own issues/PRs (e.g. only under an "AI Agora" label). Those are upstream's contribution rules, not conventions for this repo, and are deliberately left out here.
