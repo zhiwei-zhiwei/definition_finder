@@ -35,7 +35,10 @@ lease, 16 gold queries), contextual retrieval did **not** improve recall and
 slightly _hurt_ at mid-k — the storage change is an unambiguous win, but the
 contextual-embedding win is corpus-dependent and unproven on this data. It ships
 behind the `CONTEXTUAL_EMBEDDINGS` flag; recommended **off** for single-topic
-docs like this lease until re-measured on a more diverse corpus.
+docs like this lease until re-measured on a more diverse corpus. **Update:** the re-measurement
+on a 121-page 10-K (§6, 37 scored queries) showed +8.1% Pass@20 and +10.8% @3,
+concentrated in paraphrased queries, with no change at @1 — directional, not yet
+conclusive.
 
 ---
 
@@ -210,6 +213,60 @@ reason — on single-topic documents like this lease, leave it **off**; re-measu
 before enabling it on a more diverse corpus. See §8 for higher-leverage next
 steps (per-child context, reranking, larger label set).
 
+### Measured on AMD FY2022 10-K (121 pp, 44 labelled queries, 37 scored, 2026-10-15)
+
+Second corpus, chosen because a 10-K is far less homogeneous than a lease
+(business, risk factors, MD&A, notes). Labels:
+`backend/scripts/eval_labels/amd_2022_10k.json` — 12 `easy`, 16 `numeric`, 9
+`ambiguous`, 7 `no-answer`. The 7 no-answer queries (topics the filing never
+covers) are **not scored**: retrieval always returns top-k, so Pass@k can't
+measure abstention; that needs the summary step.
+
+Setup: `top_k=20`, `text-embedding-3-large`, `gpt-4.1-mini` context model, one
+context worker. Every gold phrase was verified to sit inside a single Docling
+child chunk (470 chunks) before running.
+
+Validity check: **0 context-generation failures** and 0 chunks with empty
+context. An earlier run on the same labels was discarded: with 3 workers, 9
+calls hit the 2,000,000 tokens/min limit (each call ships a ~95k-token document
+prefix) and fell back to empty context (see §7). The baseline column was
+identical across both runs, so the pipeline is deterministic.
+
+| Pass@k | baseline | contextual | delta      |
+| ------ | -------- | ---------- | ---------- |
+| @1     | 51.4%    | 51.4%      | ±0.0%      |
+| @3     | 64.9%    | 75.7%      | **+10.8%** |
+| @5     | 78.4%    | 81.1%      | +2.7%      |
+| @10    | 81.1%    | 86.5%      | +5.4%      |
+| @20    | 83.8%    | 91.9%      | **+8.1%**  |
+
+By tag (baseline → contextual):
+
+| Tag (n)        | @1          | @3          | @5          | @10         | @20          |
+| -------------- | ----------- | ----------- | ----------- | ----------- | ------------ |
+| easy (12)      | 66.7 → 58.3 | 83.3 → 75.0 | 91.7 → 91.7 | 91.7 → 91.7 | 100 → 100    |
+| numeric (16)   | 56.2 → 56.2 | 68.8 → 93.8 | 93.8 → 93.8 | 100 → 100   | 100 → 100    |
+| ambiguous (9)  | 22.2 → 33.3 | 33.3 → 44.4 | 33.3 → 44.4 | 33.3 → 55.6 | 33.3 → 66.7  |
+
+Per query: 13 ranked better with context, 4 worse (all by one place, within the
+top 4: headquarters 2→4, R&D space 1→2, net income 1→2, R&D spend 1→2), 20
+unchanged. Three queries went from _miss_ to found — profit-margin decline
+(→7), dividends (→2), who manufactures AMD's chips (→20) — all `ambiguous`.
+
+Misses in **both** modes: seasonality ("time of year" vs. the filing's
+"seasonally"), FPGA competitors, "can customers back out of purchase orders".
+"When did AMD acquire Pensando?" ranks 17 in both (many chunks mention Pensando).
+
+**Reading it honestly.** Baseline is already near-ceiling on easy and numeric
+queries (100% by @20 / @10), so there is nothing for context to add there; the
+gain is concentrated in paraphrased `ambiguous` queries, where the blurb supplies
+vocabulary the chunk lacks. That is the opposite of the lease result and fits the
+§6 hypothesis that context helps on diverse documents and homogenizes uniform
+ones. But the evidence is thin: 37 scored queries (one query = 2.7%), 9
+ambiguous (one query = 11%), one document, and the headline +8.1% @20 is 3
+queries. Treat it as directional. No change to the `CONTEXTUAL_EMBEDDINGS`
+default was made.
+
 ### Cookbook reference numbers (different corpus — for contrast, not a promise)
 
 The cookbook measured these averaged across diverse datasets (code, finance,
@@ -237,6 +294,14 @@ etc.); they are _not_ what this lease showed:
   TPM-bound** — roughly `doc_tokens × n_parents ÷ TPM` (here ~8–10 min for the
   context pass alone). For big docs under a tight limit, lower
   `CONTEXT_MAX_DOC_TOKENS` or raise your org's rate limit.
+- **Still not enough on a 121-page filing (AMD 10-K).** The context prefix is
+  capped at `CONTEXT_MAX_DOC_TOKENS` (100k), so each call is ~95k tokens; at the
+  2,000,000 tokens/min org limit even 3 workers lost 9 parents to exhausted 429
+  retries. The eval harness now forces one context worker and **fails the run
+  (exit 1, "INVALID RUN") if any chunk ends up with empty context**, so a
+  rate-limited run can't be mistaken for a measurement. The app itself still
+  degrades silently to empty context; if that matters in production, count and
+  surface those failures in `prepare`.
 - **Storage:** 3072-dim `float32` ≈ 12 KB/child. A 300-child doc ≈ 3.6 MB in
   `app.db`. Set `EMBED_DIM=1024` to cut that ~3× if size matters.
 - **Removed:** the `chromadb` dependency and its native/runtime footprint.

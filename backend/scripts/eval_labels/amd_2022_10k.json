@@ -1,0 +1,218 @@
+[
+  {
+    "query": "How many employees does AMD have?",
+    "tag": "easy",
+    "gold": "approximately 25,000 employees"
+  },
+  {
+    "query": "Where is AMD's headquarters located?",
+    "tag": "easy",
+    "gold": "Our headquarters are located in Santa Clara, California"
+  },
+  {
+    "query": "When was AMD incorporated?",
+    "tag": "easy",
+    "gold": "incorporated under the laws of Delaware on May 1, 1969"
+  },
+  {
+    "query": "Which stock exchange is AMD listed on?",
+    "tag": "easy",
+    "gold": "NASDAQ Global Select Market (NASDAQ)"
+  },
+  {
+    "query": "How long has Ernst & Young been AMD's auditor?",
+    "tag": "easy",
+    "gold": "auditor since 1970"
+  },
+  {
+    "query": "How much space does AMD have for research, engineering and administrative use?",
+    "tag": "easy",
+    "gold": "6 million square feet of space"
+  },
+  {
+    "query": "How much of AMD's space is leased versus owned?",
+    "tag": "easy",
+    "gold": "5 million square feet of leased space and 1 million square feet of owned space"
+  },
+  {
+    "query": "What are AMD's five strategic pillars?",
+    "tag": "easy",
+    "gold": "compute technology leadership, expanding data center leadership, enabling pervasive artificial intelligence (AI)"
+  },
+  {
+    "query": "What warranty does AMD give on its products?",
+    "tag": "easy",
+    "gold": "free from defects in material and workmanship under normal use and conditions for one year"
+  },
+  {
+    "query": "What share of net revenue came from AMD's largest customer?",
+    "tag": "easy",
+    "gold": "One customer accounted for 16% of our consolidated net revenue"
+  },
+  {
+    "query": "Who is AMD's main competitor in discrete graphics?",
+    "tag": "easy",
+    "gold": "our principal competitor in the supply of discrete graphics is NVIDIA"
+  },
+  {
+    "query": "When did AMD acquire Pensando?",
+    "tag": "easy",
+    "gold": "acquisition of Pensando Systems, Inc. in May 2022"
+  },
+  {
+    "query": "What was AMD's net revenue in 2022?",
+    "tag": "numeric",
+    "gold": "Net revenue for 2022 was $23.6 billion"
+  },
+  {
+    "query": "How much did net revenue grow compared with 2021?",
+    "tag": "numeric",
+    "gold": "an increase of 44% compared to 2021 net revenue of $16.4 billion"
+  },
+  {
+    "query": "What was the gross margin percentage in 2022 versus 2021?",
+    "tag": "numeric",
+    "gold": [
+      "Gross margin, as a percentage of net revenue for 2022, was 45%, compared to 48% in 2021",
+      "Gross margin as a percentage of net revenue was 45% in 2022 compared to 48% in 2021"
+    ]
+  },
+  {
+    "query": "What was AMD's net income in 2022?",
+    "tag": "numeric",
+    "gold": "Net income for 2022 was $1.3 billion compared to $3.2 billion"
+  },
+  {
+    "query": "How much did AMD spend on research and development in 2022?",
+    "tag": "numeric",
+    "gold": "Research and development expenses of $5.0 billion in 2022 increased by $2.2 billion, or 76%"
+  },
+  {
+    "query": "What was Data Center segment revenue in 2022?",
+    "tag": "numeric",
+    "gold": "Data Center net revenue of $6 billion in 2022 increased by 64%"
+  },
+  {
+    "query": "What was Gaming segment revenue in 2022?",
+    "tag": "numeric",
+    "gold": "Gaming net revenue of $6.8 billion in 2022 increased by 21%"
+  },
+  {
+    "query": "What was Embedded segment revenue in 2022?",
+    "tag": "numeric",
+    "gold": "Embedded net revenue of $4.6 billion in 2022"
+  },
+  {
+    "query": "What was Client segment revenue in 2022 and how did it change?",
+    "tag": "numeric",
+    "gold": "Client net revenue of $6.2 billion in 2022 decreased by 10%"
+  },
+  {
+    "query": "How much cash and short-term investments did AMD hold at year end 2022?",
+    "tag": "numeric",
+    "gold": "cash, cash equivalents and short-term investments were $5.9 billion"
+  },
+  {
+    "query": "How much did AMD pay to acquire Xilinx?",
+    "tag": "numeric",
+    "gold": "total purchase consideration of $48.8 billion"
+  },
+  {
+    "query": "How many shares did AMD repurchase in 2022 and for how much?",
+    "tag": "numeric",
+    "gold": "repurchased 36.3 million shares of its common stock under the Repurchase Program for $3.7 billion"
+  },
+  {
+    "query": "How much cash did operations generate in 2022?",
+    "tag": "numeric",
+    "gold": "Net cash provided by operating activities was $3.6 billion in 2022"
+  },
+  {
+    "query": "What was AMD's operating income in 2022?",
+    "tag": "numeric",
+    "gold": "Operating income for 2022 was $1.3 billion compared to operating income of $3.6 billion for 2021"
+  },
+  {
+    "query": "What was the market value of AMD stock held by non-affiliates?",
+    "tag": "numeric",
+    "gold": "approximately $139.8 billion based on the reported closing sale price of $87.08 per share"
+  },
+  {
+    "query": "How much licensing gain did AMD recognize in 2022?",
+    "tag": "numeric",
+    "gold": "recognized $102 million of licensing gain"
+  },
+  {
+    "query": "Why did AMD's profit margins shrink?",
+    "tag": "ambiguous",
+    "gold": "primarily due to amortization of intangible assets associated with the Xilinx acquisition"
+  },
+  {
+    "query": "Why did PC processor sales fall in the second half of 2022?",
+    "tag": "ambiguous",
+    "gold": "weak PC market macroeconomic conditions and inventory correction actions across the PC supply chain"
+  },
+  {
+    "query": "Is AMD's business affected by the time of year?",
+    "tag": "ambiguous",
+    "gold": "Our operating results tend to vary seasonally"
+  },
+  {
+    "query": "Who does AMD compete with for FPGAs?",
+    "tag": "ambiguous",
+    "gold": "primary FPGA competitors such as Intel, Lattice Semiconductor Corporation"
+  },
+  {
+    "query": "Does AMD pay a dividend?",
+    "tag": "ambiguous",
+    "gold": "does not expect to pay dividends in the near future"
+  },
+  {
+    "query": "Who manufactures AMD's chips?",
+    "tag": "ambiguous",
+    "gold": "We rely on Taiwan Semiconductor Manufacturing Company Limited (TSMC) for the production of all wafers"
+  },
+  {
+    "query": "Where does AMD buy older-generation wafers?",
+    "tag": "ambiguous",
+    "gold": "Wafer Supply Agreement (WSA) with GLOBALFOUNDRIES Inc. (GF)"
+  },
+  {
+    "query": "What happens if AMD loses its biggest customer?",
+    "tag": "ambiguous",
+    "gold": "A loss of this customer would have a material adverse effect on our business"
+  },
+  {
+    "query": "Can customers back out of purchase orders?",
+    "tag": "ambiguous",
+    "gold": "may be revised or canceled without penalty"
+  },
+  {
+    "query": "What was AMD's revenue guidance for the first quarter of 2023?",
+    "tag": "no-answer"
+  },
+  {
+    "query": "What is AMD's annual employee turnover rate?",
+    "tag": "no-answer"
+  },
+  {
+    "query": "Is AMD planning a stock split?",
+    "tag": "no-answer"
+  },
+  {
+    "query": "What are AMD's total carbon emissions?",
+    "tag": "no-answer"
+  },
+  {
+    "query": "How much revenue does AMD get from Apple?",
+    "tag": "no-answer"
+  },
+  {
+    "query": "What is the launch date of the Instinct MI300?",
+    "tag": "no-answer"
+  },
+  {
+    "query": "Which supercomputer uses AMD Frontier hardware?",
+    "tag": "no-answer"
+  }
+]
