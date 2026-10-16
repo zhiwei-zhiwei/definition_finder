@@ -1,9 +1,10 @@
 """Excerpts and their page labels must stay aligned when some parents have no page."""
+import uuid
 from types import SimpleNamespace
 
+from app.models.db import SessionLocal
+from app.models.schema import Document
 from app.routes import query as query_route
-
-from tests.test_doc_ownership import _insert_doc
 
 
 def test_summary_context_keeps_pages_aligned(client, monkeypatch):
@@ -24,7 +25,11 @@ def test_summary_context_keeps_pages_aligned(client, monkeypatch):
     ])
     monkeypatch.setattr(query_route.summarize, "summarize_stream", fake_summarize)
 
-    client.post("/query", json={"doc_id": _insert_doc(None), "query": "q"})
+    doc_id = uuid.uuid4().hex
+    with SessionLocal() as db:
+        db.add(Document(id=doc_id, filename="x.docx", mime="application/msword", size_bytes=1, status="ready"))
+        db.commit()
+    client.post("/query", json={"doc_id": doc_id, "query": "q"})
 
     ctx = seen["context"]
     assert "### Excerpt 1 \nno-page text" in ctx
