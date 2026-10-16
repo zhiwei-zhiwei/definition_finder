@@ -5,6 +5,8 @@ from types import SimpleNamespace
 from app.models.db import SessionLocal
 from app.models.schema import Document
 from app.routes import query as query_route
+from app.services.chunker import chunk_document
+from app.services.ingest import ExtractedItem
 
 
 def test_summary_context_keeps_pages_aligned(client, monkeypatch):
@@ -20,8 +22,8 @@ def test_summary_context_keeps_pages_aligned(client, monkeypatch):
     monkeypatch.setattr(r, "hybrid_search", lambda *a: [])
     monkeypatch.setattr(r, "consolidate", lambda *a: (["p1", "p2"], {}))
     monkeypatch.setattr(r, "fetch_parent_texts", lambda db, ids: [
-        SimpleNamespace(text="no-page text", page_start=None),
-        SimpleNamespace(text="page-seven text", page_start=7),
+        SimpleNamespace(text="no-page text", page_start=None, marked_text=None),  # falls back to text
+        SimpleNamespace(text="page-seven text", page_start=7, marked_text="[page 7] page-seven text"),
     ])
     monkeypatch.setattr(query_route.summarize, "summarize_stream", fake_summarize)
 
@@ -33,4 +35,14 @@ def test_summary_context_keeps_pages_aligned(client, monkeypatch):
 
     ctx = seen["context"]
     assert "### Excerpt 1 \nno-page text" in ctx
-    assert "### Excerpt 2 (page 7)\npage-seven text" in ctx
+    assert "### Excerpt 2 (page 7)\n[page 7] page-seven text" in ctx
+
+
+def test_parent_marks_each_page_break():
+    items = [ExtractedItem("a1", page=10), ExtractedItem("a2", page=10), ExtractedItem("furniture", page=None),
+             ExtractedItem("b1", page=11)]
+    (parent,), _ = chunk_document("d" * 32, items)
+    assert parent.marked_text == "[page 10] a1\n\na2\n\nfurniture\n\n[page 11] b1"
+    assert parent.text == "a1\n\na2\n\nfurniture\n\nb1"  # stored/shown text stays clean
+    (no_pages,), _ = chunk_document("d" * 32, [ExtractedItem("docx para")])
+    assert no_pages.marked_text is None

@@ -83,7 +83,7 @@ async def _query_stream(req: QueryRequest, user_id: str | None):
         await asyncio.sleep(0)
         with SessionLocal() as db:
             parent_rows = retrieve.fetch_parent_texts(db, winners)
-        parent_texts = [p.text for p in parent_rows]
+        parent_texts = [p.marked_text or p.text for p in parent_rows]
         # Keep None pages (non-PDFs): summarize zips texts with pages by position.
         pages = [p.page_start for p in parent_rows]
 

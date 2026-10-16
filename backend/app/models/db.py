@@ -53,6 +53,9 @@ def _ensure_columns() -> None:
             ("context_text", "TEXT"),
             ("embedding", "BLOB"),
         ],
+        "parent_chunks": [
+            ("marked_text", "TEXT"),
+        ],
     }
     with engine.begin() as conn:
         for table, cols in additions.items():

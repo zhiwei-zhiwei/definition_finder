@@ -54,6 +54,8 @@ class ParentChunk(Base):
     page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    # text with "[page N]" at page breaks, sent to the summarizer; NULL for non-PDFs / older docs
+    marked_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     document: Mapped[Document] = relationship(back_populates="parents")
     children: Mapped[list["ChildChunk"]] = relationship(

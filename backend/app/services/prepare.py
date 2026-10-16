@@ -107,6 +107,7 @@ async def prepare_document_stream(doc_id: str):
                     page_start=p.page_start,
                     page_end=p.page_end,
                     token_count=p.token_count,
+                    marked_text=p.marked_text,
                 )
             )
         for c in children:

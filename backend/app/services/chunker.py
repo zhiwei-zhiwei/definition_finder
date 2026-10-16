@@ -27,6 +27,7 @@ class ParentChunk:
     page_end: int | None = None
     bboxes: list[dict] = field(default_factory=list)
     token_count: int = 0
+    marked_text: str | None = None  # text with "[page N]" at each page break; LLM context only
 
 
 @dataclass
@@ -69,6 +70,11 @@ def _make_parents(doc_id: str, items: list[ExtractedItem]) -> list[ParentChunk]:
         pid = f"{prefix}_Parent_{idx:05d}"
         text = "\n\n".join(i.text for i in buf_items)
         pages = [i.page for i in buf_items if i.page is not None]
+        # A parent spans pages; markers let the summarizer cite the page a fact is on.
+        marked, last = [], None
+        for i in buf_items:
+            marked.append(f"[page {i.page}] {i.text}" if i.page is not None and i.page != last else i.text)
+            last = i.page if i.page is not None else last
         bboxes = [
             {"page": i.page, **i.bbox}
             for i in buf_items
@@ -83,6 +89,7 @@ def _make_parents(doc_id: str, items: list[ExtractedItem]) -> list[ParentChunk]:
                 page_end=max(pages) if pages else None,
                 bboxes=bboxes,
                 token_count=_count_tokens(text),
+                marked_text="\n\n".join(marked) if pages else None,
             )
         )
         buf_items = []

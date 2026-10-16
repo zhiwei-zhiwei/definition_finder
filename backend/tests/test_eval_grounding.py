@@ -20,8 +20,8 @@ def test_cited_and_fake_pages():
 
 def test_metrics_split_answerable_and_no_answer():
     ex = [{"text": "t", "page_start": 47, "page_end": 47}]
-    ok = {"claim": "a", "supported": True, "cited_pages": [47], "citation_correct": True}
-    bad = {"claim": "b", "supported": False, "cited_pages": [47], "citation_correct": False}
+    ok = {"claim": "a", "supported": True, "cited_pages": [47], "support_pages": [47]}
+    bad = {"claim": "b", "supported": False, "cited_pages": [47], "support_pages": [48], "citation_correct": True}
     recs = [
         g._grade({"query": "q1", "gold": "grew 44%"}, 0, ex, "Revenue grew 44% (page 47).", [ok, bad], False),
         g._grade({"query": "q2", "gold": "x marks"}, 0, [{**ex[0], "text": "X  marks it"}], "Not in the document.",
@@ -30,7 +30,7 @@ def test_metrics_split_answerable_and_no_answer():
     ]
     m = g._metrics(recs)
     assert m["groundedness"] == 0.25          # (1/2 + 0/1) / 2 answers with claims
-    assert m["citation_precision"] == 0.5     # 1 of 2 cited claims correct
+    assert m["citation_precision"] == 0.5     # 1 of 2 cited claims correct; code overrides the judge's True
     assert round(m["citation_coverage"], 3) == round(2 / 3, 3)
     assert round(m["fake_page_rate"], 3) == round(1 / 3, 3)  # page 99 never shown
     assert m["abstention_rate"] == 0.0        # q3 had no answer but answered anyway

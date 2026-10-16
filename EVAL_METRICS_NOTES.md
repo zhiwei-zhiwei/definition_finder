@@ -149,7 +149,40 @@ Date: 2026-10-16. Run `e2020cc6…`, experiment `grounding-amd-10k`: 44 queries 
 - One real failure mode: "How much did net revenue grow?" — the total wasn't retrieved, so the model summed the 3 visible segments (missing Embedded) and reported 47% / 49% instead of 44%. It should have refused. Prompt fix candidate: "don't compute totals from partial figures".
 - One soft miss: "older-generation wafers" answer added UMC/Samsung, which the excerpts don't say.
 
-**Caveat.** The judge (an LLM) is not yet checked against a human. Sheet: `data/judge_check_amd.md` (20 claims, verdicts hidden; key in `judge_check_amd.key.json`).
+**Caveat (superseded below).** The judge (an LLM) is not yet checked against a human. Sheet: `data/judge_check_amd.md` (20 claims, verdicts hidden; key in `judge_check_amd.key.json`).
+
+### 7b. Human review → fixes (same day)
+
+**What the review found** (`data/judge_check_amd.md`, 20 claims): the judge agreed on *claim truth* 19/20, but passed 6 claims the reviewer marked as citing the **wrong page**. Checked against the PDF text: in every case the fact sat 1–2 pages after the cited one.
+
+**Root cause.** A parent spans pages, but the summarizer only saw "(page 10)" for its first page, so a page-11 fact was cited as page 10. The judge only saw page ranges and accepted any page inside one.
+
+**App fixes.**
+- `chunker`: each parent also gets `marked_text` (`[page N]` at every page break). New column `parent_chunks.marked_text` (via `_ensure_columns`), saved by `prepare`, sent to the summarizer by `routes/query.py` (`marked_text or text`). Stored/shown/embedded text is unchanged. **Already-prepared docs need a re-prepare to get markers.**
+- Summarizer prompt: cite the page from the nearest `[page N]` marker; never compute totals/growth from partial figures.
+
+**Eval fixes.**
+- Judge sees the marked text and returns `support_pages` (where the support is); code sets `citation_correct` = cited ∩ support. Asked to verify citations directly it rubber-stamped them, same as with meta claims.
+- `--rejudge RUN_ID` scores a past run's stored answers with the current judge, so before/after use one judge.
+
+**Validation of the new judge.** It now flags 5/6 reviewer-flagged pages (the 6th answer mixes right and wrong citations). It also flagged 3 the reviewer passed (#9, #12, #19); the PDF text shows the judge was right (facts on pp. 48, 50, 82, cited 43/47, 49, 81).
+
+**Before → after** (both judged by the new judge; before = run `e2020cc6` re-judged as `ae87d57c`, after = new answers `904e6d03` re-judged as `a3ddc390`):
+
+| metric | before | after |
+|---|---:|---:|
+| citation precision | 54.7% | **90.2%** |
+| groundedness | 98.3% | 99.7% |
+| citation coverage | 75.3% | 79.2% |
+| fake pages | 0 | 0 |
+| abstention (no-answer) | 100% | 100% |
+| false refusal | 12.6% | 13.5% (one more retrieval-miss refusal; refused-despite-gold still 0%) |
+| gold hit | 59.5% | 61.3% |
+
+- The "net revenue grew 47% / 49%" hallucination is gone: answers now list the segment figures without inventing a total.
+- The 99.5% citation precision in §7 came from the lenient judge and was wrong; 54.7% is the real "before".
+- Remaining misses are listed under "Wrong citations" in run `a3ddc390`'s `grounding_report.md`.
+
 
 ## Other files touched
 

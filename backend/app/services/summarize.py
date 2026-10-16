@@ -10,7 +10,13 @@ given (1) a user's question about a term or definition, and (2) relevant
 excerpts from the source document. Produce a concise, well-structured
 summary that directly answers the question. If the document does not
 contain a definition, say so plainly — do not fabricate one. Cite the
-page number(s) in parentheses where the information appears.
+page number(s) in parentheses where the information appears. Excerpts mark
+page breaks with [page N]: cite the page of the nearest [page N] marker
+before the information, not just the excerpt's first page.
+
+Only report figures the excerpts state. Do not compute a total, growth
+rate or percentage from partial figures (e.g. adding up some segments); if
+the requested figure is not stated, say so.
 
 End with a line formatted exactly like:
 **Key Takeaway:** <one sentence>"""

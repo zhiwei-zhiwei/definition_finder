@@ -11,7 +11,7 @@ Usage (from backend/, venv active, OPENAI_API_KEY in .env):
 
 Metrics, mean and std over --reps (the summary runs at temperature 0.2, so it varies):
   groundedness        supported claims / claims, averaged over answers that make claims
-  citation_precision  cited claims whose cited page's excerpt supports them / cited claims
+  citation_precision  cited claims citing a page the judge located the support on / cited claims
   citation_coverage   claims carrying a page citation / claims
   fake_page_rate      answers citing a page outside every excerpt's page span (regex, no LLM)
   abstention_rate     no-answer queries where the answer says the document doesn't cover it
@@ -57,8 +57,9 @@ For each claim return:
 - "supported": true only if the excerpts state it or directly imply it (numbers, dates and
   names must match); false otherwise
 - "cited_pages": the page numbers the answer cites for this claim (empty list if none)
-- "citation_correct": null if cited_pages is empty; otherwise true when an excerpt whose page
-  span includes one of the cited pages supports the claim, false if not
+- "support_pages": the page number(s) where the supporting text actually sits (empty list if
+  unsupported). Excerpts mark page breaks with [page N]: text belongs to the nearest [page N]
+  marker before it. Find the page from the markers; ignore what the answer cites.
 
 Also return "abstained": true if the answer's main message is that the document does not
 contain the requested information, else false.
@@ -76,14 +77,15 @@ def _answer_inputs(db, doc_id: str, label: dict, top_k: int) -> list[dict]:
     q = label["query"]
     hits = retrieve.hybrid_search(db, doc_id, retrieve.embed_query(q), q, top_k)
     winners, _ = retrieve.consolidate(hits, settings.PARENT_CONSOLIDATION_THRESHOLD)
-    return [{"text": p.text, "page_start": p.page_start, "page_end": p.page_end or p.page_start}
+    return [{"text": p.text, "marked": p.marked_text or p.text,
+             "page_start": p.page_start, "page_end": p.page_end or p.page_start}
             for p in retrieve.fetch_parent_texts(db, winners)]
 
 
 def _summarize(query: str, ex: list[dict]) -> str:
     if not ex:
         return _NO_CONTEXT
-    return "".join(summarize.summarize_stream(query, [e["text"] for e in ex], [e["page_start"] for e in ex]))
+    return "".join(summarize.summarize_stream(query, [e["marked"] for e in ex], [e["page_start"] for e in ex]))
 
 
 def _span(e: dict) -> str:
@@ -92,7 +94,7 @@ def _span(e: dict) -> str:
 
 
 def _judge(query: str, ex: list[dict], answer: str, model: str) -> tuple[list[dict], bool]:
-    ctx = "\n\n".join(f"### Excerpt {i} ({_span(e)})\n{e['text']}" for i, e in enumerate(ex, 1))
+    ctx = "\n\n".join(f"### Excerpt {i} ({_span(e)})\n{e.get('marked', e['text'])}" for i, e in enumerate(ex, 1))
     resp = summarize._get_client().chat.completions.create(
         model=model, temperature=0, response_format={"type": "json_object"},
         messages=[{"role": "system", "content": JUDGE_PROMPT},
@@ -121,6 +123,11 @@ def _gold_hit(gold: str, answer: str) -> bool:
 def _grade(label: dict, rep: int, ex: list[dict], answer: str, claims: list[dict], abstained: bool) -> dict:
     # Only factual claims are scored; "the excerpts don't say X" is covered by `abstained`.
     claims = [c for c in claims if c.get("kind") != "meta"]
+    # The judge locates support but rubber-stamps citations when asked to verify them
+    # (it passed every page a human flagged), so the page comparison is done here.
+    for c in claims:
+        cited = set(c.get("cited_pages") or [])
+        c["citation_correct"] = bool(cited & set(c.get("support_pages") or [])) if cited else None
     return {
         "label": label, "rep": rep, "answer": answer, "claims": claims, "abstained": abstained,
         "pages": [_span(e) for e in ex],
@@ -200,7 +207,7 @@ def _log_mlflow(args, params: dict, summ: dict, per_rep: list[dict], recs: list[
     import mlflow
 
     _mlflow_experiment(args.experiment)
-    with mlflow.start_run(run_name=f"{args.pdf.stem} grounding") as run:
+    with mlflow.start_run(run_name=f"{args.pdf.stem} grounding" + (" (rejudged)" if args.rejudge else "")) as run:
         mlflow.log_params(params)
         mlflow.log_metrics(summ)
         for k, m in enumerate(per_rep):
@@ -235,6 +242,8 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=4, help="concurrent summary/judge calls")
     ap.add_argument("--limit", type=int, help="only the first N labels (smoke test)")
     ap.add_argument("--experiment", help="MLflow experiment name (default: grounding-<labels file stem>)")
+    ap.add_argument("--rejudge", metavar="RUN_ID", help="judge the answers stored in an earlier run "
+                    "instead of generating new ones (score old answers with the current judge)")
     args = ap.parse_args()
     args.experiment = args.experiment or f"grounding-{args.labels.stem}"
 
@@ -255,10 +264,20 @@ def main() -> None:
         _cleanup(doc_id, args.pdf.suffix)
     print(f"prepared in {prep_s:.0f}s; summarizing + judging…")
 
+    old = {}
+    if args.rejudge:
+        import mlflow
+
+        _mlflow_experiment(args.experiment)
+        t = mlflow.artifacts.load_dict(f"runs:/{args.rejudge}/per_query.json")
+        old = {(r[0], r[1]): r[2] for r in ([row[t["columns"].index(c)] for c in ("rep", "query", "answer")]
+                                            for row in t["data"])}
+        args.reps = 1 + max(rep for rep, _ in old)
+
     def run(job: tuple[int, int]) -> dict:
         rep, i = job
         q, ex = labels[i]["query"], excerpts[i]
-        answer = _summarize(q, ex)
+        answer = old[(rep, q)] if old else _summarize(q, ex)
         return _grade(labels[i], rep, ex, answer, *_judge(q, ex, answer, args.judge_model))
 
     with ThreadPoolExecutor(args.workers) as pool:
@@ -281,7 +300,8 @@ def main() -> None:
     params = {"pdf": args.pdf.name, "labels": args.labels.name, "n_queries": len(labels), "reps": args.reps,
               "top_k": args.top_k, "answer_model": settings.CHAT_MODEL, "judge_model": args.judge_model,
               "contextual_embeddings": settings.CONTEXTUAL_EMBEDDINGS, "embed_model": settings.EMBED_MODEL,
-              "parent_tokens": settings.PARENT_TOKENS, "child_tokens": settings.CHILD_TOKENS}
+              "parent_tokens": settings.PARENT_TOKENS, "child_tokens": settings.CHILD_TOKENS,
+              "rejudged_run": args.rejudge or ""}
     report = _report(args.pdf.stem, summ, recs, params)
     print("\n" + report.split("## By tag")[1].split("## Unsupported")[0].strip())
     _log_mlflow(args, params, summ, per_rep, recs, report)
