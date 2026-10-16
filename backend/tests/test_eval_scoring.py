@@ -30,3 +30,23 @@ def test_label_files_are_well_formed():
             else:
                 golds = [d["gold"]] if isinstance(d["gold"], str) else d["gold"]
                 assert golds and all(g.strip() for g in golds), (f, d["query"])
+
+
+def test_mrr_and_recall_at_k():
+    assert abs(ev._mrr([1, 3, None]) - (1 + 1 / 3) / 3) < 1e-9  # miss scores 0
+    assert ev._gold_ranks(["a x", "b", "c a"], ["a", "c", "zz"]) == [1, 3, None]
+    # one query with 2 gold passages (ranks 2 and miss) + one single-gold query at rank 1
+    r = ev._recallk([[2, None], [1]])
+    assert r[1] == 0.5 and r[3] == 0.75  # (0 + 1)/2, (0.5 + 1)/2
+
+
+def test_comparison_report_counts_rank_moves():
+    def mk(q, rank):
+        return {"label": {"query": q, "tag": "t"}, "rank": rank, "gold_ranks": [rank],
+                "embed_ms": 1.0, "search_ms": 1.0, "total_ms": 2.0}
+    det = {"base": [mk("up", None), mk("down", 1), mk("same", 2)],
+           "ctx": [mk("up", 4), mk("down", 3), mk("same", 2)]}
+    summ = {n: ev._metrics(det[n]) for n in det}
+    md = ev._comparison_report("doc", ["base", "ctx"], summ, {"base": 1.0, "ctx": 2.0}, det)
+    assert "ctx better: 1, worse: 1, unchanged: 1" in md
+    assert "| up | miss | 4 |" in md and "| same |" not in md

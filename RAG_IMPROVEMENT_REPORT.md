@@ -27,8 +27,8 @@ Two changes, both contained to the backend services layer:
    of sync" bugs), one dependency (`chromadb`), and — at this app's per-document
    scale — is _faster_ than an HNSW index.
 
-Status: implemented, wired end-to-end, lint-clean, **14/14 tests pass** (10
-pre-existing + 4 new retrieval/pipeline tests).
+Status: implemented, wired end-to-end, lint-clean, **19/19 tests pass** (as of
+2026-10-15; 14 at first write-up, then 5 eval-scoring tests).
 
 **Honest headline result (§6):** on the one document we measured (a 51-page
 lease, 16 gold queries), contextual retrieval did **not** improve recall and
@@ -242,11 +242,11 @@ identical across both runs, so the pipeline is deterministic.
 
 By tag (baseline → contextual):
 
-| Tag (n)        | @1          | @3          | @5          | @10         | @20          |
-| -------------- | ----------- | ----------- | ----------- | ----------- | ------------ |
-| easy (12)      | 66.7 → 58.3 | 83.3 → 75.0 | 91.7 → 91.7 | 91.7 → 91.7 | 100 → 100    |
-| numeric (16)   | 56.2 → 56.2 | 68.8 → 93.8 | 93.8 → 93.8 | 100 → 100   | 100 → 100    |
-| ambiguous (9)  | 22.2 → 33.3 | 33.3 → 44.4 | 33.3 → 44.4 | 33.3 → 55.6 | 33.3 → 66.7  |
+| Tag (n)       | @1          | @3          | @5          | @10         | @20         |
+| ------------- | ----------- | ----------- | ----------- | ----------- | ----------- |
+| easy (12)     | 66.7 → 58.3 | 83.3 → 75.0 | 91.7 → 91.7 | 91.7 → 91.7 | 100 → 100   |
+| numeric (16)  | 56.2 → 56.2 | 68.8 → 93.8 | 93.8 → 93.8 | 100 → 100   | 100 → 100   |
+| ambiguous (9) | 22.2 → 33.3 | 33.3 → 44.4 | 33.3 → 44.4 | 33.3 → 55.6 | 33.3 → 66.7 |
 
 Per query: 13 ranked better with context, 4 worse (all by one place, within the
 top 4: headquarters 2→4, R&D space 1→2, net income 1→2, R&D spend 1→2), 20
@@ -266,6 +266,19 @@ ones. But the evidence is thin: 37 scored queries (one query = 2.7%), 9
 ambiguous (one query = 11%), one document, and the headline +8.1% @20 is 3
 queries. Treat it as directional. No change to the `CONTEXTUAL_EMBEDDINGS`
 default was made.
+
+**Rerun (2026-10-15, logged to MLflow `eval-amd-10k`).** Same PDF and labels,
+clean run (0 context failures). Baseline reproduced exactly (retrieval is
+deterministic). Contextual did **not**: Pass@1/3/5/10/20 = 54.1 / 70.3 / 75.7 /
+86.5 / 89.2% (vs 51.4 / 75.7 / 81.1 / 86.5 / 91.9% last run), because the LLM
+writes slightly different blurbs each time. "Who manufactures AMD's chips?"
+flipped from found (→20) back to miss. New metrics: MRR 0.605 → 0.637 (+0.031);
+query latency p50 290 → 327 ms (BM25 tokenizes the longer context+chunk text,
+search 39 → 74 ms; the embed call is ~255 ms of network either way); prepare
+117 → 244 s (one context worker). **So run-to-run noise on the contextual arm
+(up to ±5.4% at a given k) is the same size as the measured gain.** The
+direction (better @20 and MRR, mostly on `ambiguous`) held across both runs; the
+size is not pinned down.
 
 ### Cookbook reference numbers (different corpus — for contrast, not a promise)
 
