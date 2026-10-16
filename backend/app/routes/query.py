@@ -84,7 +84,8 @@ async def _query_stream(req: QueryRequest, user_id: str | None):
         with SessionLocal() as db:
             parent_rows = retrieve.fetch_parent_texts(db, winners)
         parent_texts = [p.text for p in parent_rows]
-        pages = [p.page_start for p in parent_rows if p.page_start is not None]
+        # Keep None pages (non-PDFs): summarize zips texts with pages by position.
+        pages = [p.page_start for p in parent_rows]
 
         # Emit the clickable snippets (children, not parents).
         snippets_payload = [
@@ -171,7 +172,7 @@ def _persist_query(
         db.commit()
 
 
-async def _bridge_token_stream(loop, query: str, parent_texts: list[str], pages: list[int]):
+async def _bridge_token_stream(loop, query: str, parent_texts: list[str], pages: list[int | None]):
     """Run the blocking OpenAI generator in a worker thread and bridge each
     token into the async world via a queue, so tokens flush to the browser
     as soon as the model produces them."""

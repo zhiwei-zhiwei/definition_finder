@@ -26,7 +26,7 @@ def _get_client() -> OpenAI:
     return _client
 
 
-def _format_context(query: str, parent_texts: list[str], pages: list[int]) -> str:
+def _format_context(query: str, parent_texts: list[str], pages: list[int | None]) -> str:
     blocks = []
     for i, (txt, page) in enumerate(zip(parent_texts, pages), start=1):
         page_label = f"(page {page})" if page else ""
@@ -35,7 +35,7 @@ def _format_context(query: str, parent_texts: list[str], pages: list[int]) -> st
     return f"USER QUESTION:\n{query}\n\nSOURCE EXCERPTS:\n{ctx}"
 
 
-def summarize_stream(query: str, parent_texts: list[str], pages: list[int]) -> Iterator[str]:
+def summarize_stream(query: str, parent_texts: list[str], pages: list[int | None]) -> Iterator[str]:
     client = _get_client()
     resp = client.chat.completions.create(
         model=settings.CHAT_MODEL,
