@@ -244,14 +244,21 @@ def _log_report(title: str, names: list[str], summ: dict, prep_s: dict, detail: 
     mlflow.log_figure(_passk_figure(names, summ), "pass_at_k.png")
 
 
-def _log_mlflow(args, modes, summ, per_mode_detail, prep_s, invalid, n_skipped) -> None:
+def _mlflow_experiment(name: str) -> None:
+    """Point MLflow at data/mlflow (or MLFLOW_TRACKING_URI) and select the experiment, creating it if new."""
     import mlflow  # lazy: heavy import, only needed once a real run has finished
 
     _MLFLOW_DIR.mkdir(parents=True, exist_ok=True)
     mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI", f"sqlite:///{_MLFLOW_DIR / 'mlflow.db'}"))
-    if mlflow.get_experiment_by_name(args.experiment) is None:
-        mlflow.create_experiment(args.experiment, artifact_location=(_MLFLOW_DIR / "artifacts").as_uri())
-    mlflow.set_experiment(args.experiment)
+    if mlflow.get_experiment_by_name(name) is None:
+        mlflow.create_experiment(name, artifact_location=(_MLFLOW_DIR / "artifacts").as_uri())
+    mlflow.set_experiment(name)
+
+
+def _log_mlflow(args, modes, summ, per_mode_detail, prep_s, invalid, n_skipped) -> None:
+    import mlflow
+
+    _mlflow_experiment(args.experiment)
 
     names = [n for n, _ in modes]
     common = {

@@ -119,6 +119,38 @@ mlflow ui --backend-store-uri sqlite:///../data/mlflow/mlflow.db --port 5055   #
 
 ---
 
+## 7. Groundedness / citation checks
+
+Date: 2026-10-16. Run `e2020cc6…`, experiment `grounding-amd-10k`: 44 queries × 3 reps, app settings (top-k 5, baseline retrieval), answer `gpt-4.1-mini`, judge `gpt-4.1`.
+
+**What it measures.** Retrieval scores asked "did the right passage come back?". This asks "did the *answer* stick to what came back?".
+
+**What changed.**
+- Bug fix (`routes/query.py`): excerpts and page labels were zipped after dropping `None` pages, so DOCX/HTML docs sent the LLM *no excerpts* and mixed docs shifted page labels. +1 route test.
+- New `backend/scripts/eval_grounding.py` (reuses the retrieval harness helpers). Per query: real answer path → summary → judge splits it into claims, marks each supported / cited page correct, tags it `fact` or `meta` ("the excerpts don't say X" is meta, not scored — the judge ignored a plain "don't list these" rule).
+- Code-only checks: fake pages (cited page outside every excerpt's span), gold-in-excerpts, gold numbers in the answer.
+- +2 tests (`tests/test_eval_grounding.py`). Suite: 22 passed.
+
+**Result (mean ± std over 3 reps).**
+
+| metric | value | meaning |
+|---|---|---|
+| groundedness | 0.993 ± 0.002 | 4 unsupported claims in 132 answers |
+| citation precision | 0.995 | 2 wrong citations (the same 2 hallucinated claims) |
+| citation coverage | 0.873 | mostly the uncited Key Takeaway line |
+| fake pages | 0 | never cites a page it wasn't shown |
+| abstention (no-answer) | 100% | all 7 correctly refused |
+| false refusal | 11.7% | **every one** had the gold missing from the excerpts |
+| gold in excerpts | 75.7% | retrieval at top-k 5 misses ~1 in 4 |
+| refused despite gold | 0% | never refused when the answer was there |
+
+**Takeaways.**
+- Generation is not the problem. Retrieval at the app's top-k 5 is: every refusal was a retrieval miss.
+- One real failure mode: "How much did net revenue grow?" — the total wasn't retrieved, so the model summed the 3 visible segments (missing Embedded) and reported 47% / 49% instead of 44%. It should have refused. Prompt fix candidate: "don't compute totals from partial figures".
+- One soft miss: "older-generation wafers" answer added UMC/Samsung, which the excerpts don't say.
+
+**Caveat.** The judge (an LLM) is not yet checked against a human. Sheet: `data/judge_check_amd.md` (20 claims, verdicts hidden; key in `judge_check_amd.key.json`).
+
 ## Other files touched
 
 - `backend/tests/test_eval_scoring.py`: +1 test covering MRR, multi-gold ranks and Recall@k. The suite is now 19 passed (with §6); ruff is clean.
