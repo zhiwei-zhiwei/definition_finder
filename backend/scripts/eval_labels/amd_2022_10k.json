@@ -2,7 +2,10 @@
   {
     "query": "How many employees does AMD have?",
     "tag": "easy",
-    "gold": "approximately 25,000 employees"
+    "gold": "approximately 25,000 employees",
+    "key_numbers": [
+      "25,000"
+    ]
   },
   {
     "query": "Where is AMD's headquarters located?",
@@ -12,7 +15,10 @@
   {
     "query": "When was AMD incorporated?",
     "tag": "easy",
-    "gold": "incorporated under the laws of Delaware on May 1, 1969"
+    "gold": "incorporated under the laws of Delaware on May 1, 1969",
+    "key_numbers": [
+      "1969"
+    ]
   },
   {
     "query": "Which stock exchange is AMD listed on?",
@@ -22,17 +28,27 @@
   {
     "query": "How long has Ernst & Young been AMD's auditor?",
     "tag": "easy",
-    "gold": "auditor since 1970"
+    "gold": "auditor since 1970",
+    "key_numbers": [
+      "1970"
+    ]
   },
   {
     "query": "How much space does AMD have for research, engineering and administrative use?",
     "tag": "easy",
-    "gold": "6 million square feet of space"
+    "gold": "6 million square feet of space",
+    "key_numbers": [
+      "6 million"
+    ]
   },
   {
     "query": "How much of AMD's space is leased versus owned?",
     "tag": "easy",
-    "gold": "5 million square feet of leased space and 1 million square feet of owned space"
+    "gold": "5 million square feet of leased space and 1 million square feet of owned space",
+    "key_numbers": [
+      "5 million",
+      "1 million"
+    ]
   },
   {
     "query": "What are AMD's five strategic pillars?",
@@ -47,7 +63,10 @@
   {
     "query": "What share of net revenue came from AMD's largest customer?",
     "tag": "easy",
-    "gold": "One customer accounted for 16% of our consolidated net revenue"
+    "gold": "One customer accounted for 16% of our consolidated net revenue",
+    "key_numbers": [
+      "16%"
+    ]
   },
   {
     "query": "Who is AMD's main competitor in discrete graphics?",
@@ -57,17 +76,26 @@
   {
     "query": "When did AMD acquire Pensando?",
     "tag": "easy",
-    "gold": "acquisition of Pensando Systems, Inc. in May 2022"
+    "gold": "acquisition of Pensando Systems, Inc. in May 2022",
+    "key_numbers": [
+      "2022"
+    ]
   },
   {
     "query": "What was AMD's net revenue in 2022?",
     "tag": "numeric",
-    "gold": "Net revenue for 2022 was $23.6 billion"
+    "gold": "Net revenue for 2022 was $23.6 billion",
+    "key_numbers": [
+      "$23.6 billion"
+    ]
   },
   {
     "query": "How much did net revenue grow compared with 2021?",
     "tag": "numeric",
-    "gold": "an increase of 44% compared to 2021 net revenue of $16.4 billion"
+    "gold": "an increase of 44% compared to 2021 net revenue of $16.4 billion",
+    "key_numbers": [
+      "44%"
+    ]
   },
   {
     "query": "What was the gross margin percentage in 2022 versus 2021?",
@@ -75,72 +103,117 @@
     "gold": [
       "Gross margin, as a percentage of net revenue for 2022, was 45%, compared to 48% in 2021",
       "Gross margin as a percentage of net revenue was 45% in 2022 compared to 48% in 2021"
+    ],
+    "key_numbers": [
+      "45%",
+      "48%"
     ]
   },
   {
     "query": "What was AMD's net income in 2022?",
     "tag": "numeric",
-    "gold": "Net income for 2022 was $1.3 billion compared to $3.2 billion"
+    "gold": "Net income for 2022 was $1.3 billion compared to $3.2 billion",
+    "key_numbers": [
+      "$1.3 billion"
+    ]
   },
   {
     "query": "How much did AMD spend on research and development in 2022?",
     "tag": "numeric",
-    "gold": "Research and development expenses of $5.0 billion in 2022 increased by $2.2 billion, or 76%"
+    "gold": "Research and development expenses of $5.0 billion in 2022 increased by $2.2 billion, or 76%",
+    "key_numbers": [
+      "$5.0 billion"
+    ]
   },
   {
     "query": "What was Data Center segment revenue in 2022?",
     "tag": "numeric",
-    "gold": "Data Center net revenue of $6 billion in 2022 increased by 64%"
+    "gold": "Data Center net revenue of $6 billion in 2022 increased by 64%",
+    "key_numbers": [
+      "$6 billion"
+    ]
   },
   {
     "query": "What was Gaming segment revenue in 2022?",
     "tag": "numeric",
-    "gold": "Gaming net revenue of $6.8 billion in 2022 increased by 21%"
+    "gold": "Gaming net revenue of $6.8 billion in 2022 increased by 21%",
+    "key_numbers": [
+      "$6.8 billion"
+    ]
   },
   {
     "query": "What was Embedded segment revenue in 2022?",
     "tag": "numeric",
-    "gold": "Embedded net revenue of $4.6 billion in 2022"
+    "gold": "Embedded net revenue of $4.6 billion in 2022",
+    "key_numbers": [
+      "$4.6 billion"
+    ]
   },
   {
     "query": "What was Client segment revenue in 2022 and how did it change?",
     "tag": "numeric",
-    "gold": "Client net revenue of $6.2 billion in 2022 decreased by 10%"
+    "gold": "Client net revenue of $6.2 billion in 2022 decreased by 10%",
+    "key_numbers": [
+      "$6.2 billion",
+      "10%"
+    ]
   },
   {
     "query": "How much cash and short-term investments did AMD hold at year end 2022?",
     "tag": "numeric",
-    "gold": "cash, cash equivalents and short-term investments were $5.9 billion"
+    "gold": "cash, cash equivalents and short-term investments were $5.9 billion",
+    "key_numbers": [
+      "$5.9 billion"
+    ]
   },
   {
     "query": "How much did AMD pay to acquire Xilinx?",
     "tag": "numeric",
-    "gold": "total purchase consideration of $48.8 billion"
+    "gold": "total purchase consideration of $48.8 billion",
+    "key_numbers": [
+      "$48.8 billion"
+    ]
   },
   {
     "query": "How many shares did AMD repurchase in 2022 and for how much?",
     "tag": "numeric",
-    "gold": "repurchased 36.3 million shares of its common stock under the Repurchase Program for $3.7 billion"
+    "gold": "repurchased 36.3 million shares of its common stock under the Repurchase Program for $3.7 billion",
+    "key_numbers": [
+      "36.3 million",
+      "$3.7 billion"
+    ]
   },
   {
     "query": "How much cash did operations generate in 2022?",
     "tag": "numeric",
-    "gold": "Net cash provided by operating activities was $3.6 billion in 2022"
+    "gold": "Net cash provided by operating activities was $3.6 billion in 2022",
+    "key_numbers": [
+      "$3.6 billion"
+    ]
   },
   {
     "query": "What was AMD's operating income in 2022?",
     "tag": "numeric",
-    "gold": "Operating income for 2022 was $1.3 billion compared to operating income of $3.6 billion for 2021"
+    "gold": "Operating income for 2022 was $1.3 billion compared to operating income of $3.6 billion for 2021",
+    "key_numbers": [
+      "$1.3 billion"
+    ]
   },
   {
     "query": "What was the market value of AMD stock held by non-affiliates?",
     "tag": "numeric",
-    "gold": "approximately $139.8 billion based on the reported closing sale price of $87.08 per share"
+    "gold": "approximately $139.8 billion based on the reported closing sale price of $87.08 per share",
+    "key_numbers": [
+      "$139.8 billion"
+    ]
   },
   {
     "query": "How much licensing gain did AMD recognize in 2022?",
     "tag": "numeric",
-    "gold": "recognized $102 million of licensing gain"
+    "gold": "recognized $102 million of licensing gain",
+    "key_numbers": [
+      "$102 million"
+    ]
   },
   {
     "query": "Why did AMD's profit margins shrink?",

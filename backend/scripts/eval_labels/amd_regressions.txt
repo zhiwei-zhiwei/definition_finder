@@ -1,0 +1,26 @@
+# Queries from amd_2022_10k.json that failed in a past grounding run; the regression gate runs
+# just these. Add a query when a new failure is fixed. Gate (from backend/, ~5 min, ~$0.50):
+#   python scripts/eval_grounding.py --pdf ../AMD_2022_10K.pdf \
+#     --labels scripts/eval_labels/amd_2022_10k.json --only scripts/eval_labels/amd_regressions.txt \
+#     --experiment grounding-amd-regressions \
+#     --require "unsourced_number_rate<=0" --require "number_exact_rate>=0.83" \
+#     --require "context_gold_rate>=0.8" --require "citation_precision>=0.8" \
+#     --require "groundedness>=0.95" --require "failure_rate<=0.5"
+# Gates = run 618f1ee9 (2026-10-17) minus ~2 std where the metric varies between reps;
+# retrieval and number checks don't vary, so those sit at today's value.
+# summed partial segments into a made-up growth figure; later lost its gold to consolidate
+How much did net revenue grow compared with 2021?
+# cited the excerpt's first page for facts pages later
+What was Client segment revenue in 2022 and how did it change?
+How much did AMD spend on research and development in 2022?
+What was AMD's operating income in 2022?
+# consolidate dropped a gold parent that ranked in the top 5
+What share of net revenue came from AMD's largest customer?
+Can customers back out of purchase orders?
+How much did AMD pay to acquire Xilinx?
+Who does AMD compete with for FPGAs?
+# unsupported claims
+Where does AMD buy older-generation wafers?
+Is AMD's business affected by the time of year?
+# refusal cited a page range past the excerpts
+Is AMD planning a stock split?

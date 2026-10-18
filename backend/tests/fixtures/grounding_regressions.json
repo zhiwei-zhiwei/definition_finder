@@ -1,0 +1,568 @@
+[
+ {
+  "note": "Summed 3 of 4 segments into a made-up 49% (true: 44%); must stay unsourced_number",
+  "run": "e2020cc63c3d40bf8c2df474bdb29121",
+  "rep": 1,
+  "label": {
+   "query": "How much did net revenue grow compared with 2021?",
+   "tag": "numeric",
+   "gold": "an increase of 44% compared to 2021 net revenue of $16.4 billion",
+   "key_numbers": [
+    "44%"
+   ]
+  },
+  "excerpts": [
+   {
+    "text": "Through the end of 2022, we continue to maintain a valuation allowance of approximately $2.1 billion for certain federal, state, and foreign tax attributes. The federal  valuation  allowance  maintained  is  due  to  limitations,  under  Internal  Revenue  Code  Section  382  or  383,  separate  return  loss  year  rules,  or  dual consolidated loss rules. Certain state and foreign valuation allowances are maintained due to a lack of sufficient sources of future taxable income.\n\nDuring the second quarter of fiscal year 2022, we changed our reporting segments to align our financial reporting with how we manage our business in strategic end markets. This is consistent with how our Chief Operating Decision Maker (CODM) assesses our financial performance and allocates resources. As a result, we report our financial performance based on the following four reportable segments: Data Center, Client, Gaming, and Embedded.\n\nThe following table provides a summary of net revenue and operating income (loss) by segment for 2022 and 2021:\n\nData Center net revenue of $6 billion in 2022 increased by 64%, compared to net revenue of $3.7 billion in 2021. The increase was primarily driven by higher sales of our EPYC server processors.\n\nData Center operating income was $1.8 billion in 2022, compared to operating income of $991 million in 2021. The increase in operating income was primarily driven by higher revenue, partially offset by higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nClient  net  revenue of $6.2 billion in  2022 decreased by 10%, compared to net revenue of $6.9 billion in 2021, primarily driven by a 24% decrease in unit shipment,  partially  offset  by  a  19%  increase  in  average  selling  price.  The  decrease  in  unit  shipments  was  due  to  challenging  PC  market  conditions  and significant inventory correction across the PC supply chain experienced during the second half of 2022. The increase in average selling price was primarily driven by a richer mix of Ryzen mobile processor sales.\n\nClient operating income was $1.2 billion in 2022, compared to operating income of $2.1 billion in 2021. The decrease in operating income was primarily driven by lower revenue and higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nGaming net revenue of $6.8 billion in 2022 increased by 21%, compared to net revenue of $5.6 billion in 2021. The increase in net revenue was driven by higher semi-custom product sales due to higher demand for gaming console SoCs, partially offset by lower gaming graphics sales due to a decrease in unit shipments driven by soft consumer demand given weakened macroeconomic conditions experienced in the second half of 2022.",
+    "page_start": 47,
+    "page_end": 49
+   }
+  ],
+  "answer": "Net revenue grew by 49% compared with 2021. This is derived from the segment net revenues reported for 2022 and 2021: Data Center revenue increased by 64% (from $3.7 billion to $6 billion), Client revenue decreased by 10% (from $6.9 billion to $6.2 billion), and Gaming revenue increased by 21% (from $5.6 billion to $6.8 billion). The overall net revenue growth is the aggregate effect of these changes across segments (page 47).\n\n**Key Takeaway:** Net revenue grew by 49% in 2022 compared with 2021, driven primarily by strong growth in the Data Center and Gaming segments.",
+  "claims": [
+   {
+    "claim": "Net revenue grew by 49% compared with 2021",
+    "kind": "fact",
+    "supported": false,
+    "cited_pages": [
+     47
+    ],
+    "citation_correct": false
+   },
+   {
+    "claim": "Data Center revenue increased by 64% (from $3.7 billion to $6 billion)",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "Client revenue decreased by 10% (from $6.9 billion to $6.2 billion)",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "Gaming revenue increased by 21% (from $5.6 billion to $6.8 billion)",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "The overall net revenue growth is the aggregate effect of these changes across segments",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "Net revenue grew by 49% in 2022 compared with 2021, driven primarily by strong growth in the Data Center and Gaming segments",
+    "kind": "fact",
+    "supported": false,
+    "cited_pages": [],
+    "citation_correct": null
+   }
+  ],
+  "abstained": false,
+  "failures": [
+   "unsourced_number",
+   "unsupported_claim",
+   "retrieval_miss",
+   "wrong_number",
+   "wrong_page"
+  ]
+ },
+ {
+  "note": "Old consolidate dropped the 44% gold parent (rank 4); answer lists segments only",
+  "run": "a3ddc390dd324119a62524fa119bc11b",
+  "rep": 0,
+  "label": {
+   "query": "How much did net revenue grow compared with 2021?",
+   "tag": "numeric",
+   "gold": "an increase of 44% compared to 2021 net revenue of $16.4 billion",
+   "key_numbers": [
+    "44%"
+   ]
+  },
+  "excerpts": [
+   {
+    "text": "Through the end of 2022, we continue to maintain a valuation allowance of approximately $2.1 billion for certain federal, state, and foreign tax attributes. The federal  valuation  allowance  maintained  is  due  to  limitations,  under  Internal  Revenue  Code  Section  382  or  383,  separate  return  loss  year  rules,  or  dual consolidated loss rules. Certain state and foreign valuation allowances are maintained due to a lack of sufficient sources of future taxable income.\n\nDuring the second quarter of fiscal year 2022, we changed our reporting segments to align our financial reporting with how we manage our business in strategic end markets. This is consistent with how our Chief Operating Decision Maker (CODM) assesses our financial performance and allocates resources. As a result, we report our financial performance based on the following four reportable segments: Data Center, Client, Gaming, and Embedded.\n\nThe following table provides a summary of net revenue and operating income (loss) by segment for 2022 and 2021:\n\nData Center net revenue of $6 billion in 2022 increased by 64%, compared to net revenue of $3.7 billion in 2021. The increase was primarily driven by higher sales of our EPYC server processors.\n\nData Center operating income was $1.8 billion in 2022, compared to operating income of $991 million in 2021. The increase in operating income was primarily driven by higher revenue, partially offset by higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nClient  net  revenue of $6.2 billion in  2022 decreased by 10%, compared to net revenue of $6.9 billion in 2021, primarily driven by a 24% decrease in unit shipment,  partially  offset  by  a  19%  increase  in  average  selling  price.  The  decrease  in  unit  shipments  was  due  to  challenging  PC  market  conditions  and significant inventory correction across the PC supply chain experienced during the second half of 2022. The increase in average selling price was primarily driven by a richer mix of Ryzen mobile processor sales.\n\nClient operating income was $1.2 billion in 2022, compared to operating income of $2.1 billion in 2021. The decrease in operating income was primarily driven by lower revenue and higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nGaming net revenue of $6.8 billion in 2022 increased by 21%, compared to net revenue of $5.6 billion in 2021. The increase in net revenue was driven by higher semi-custom product sales due to higher demand for gaming console SoCs, partially offset by lower gaming graphics sales due to a decrease in unit shipments driven by soft consumer demand given weakened macroeconomic conditions experienced in the second half of 2022.",
+    "page_start": 47,
+    "page_end": 49
+   }
+  ],
+  "answer": "Net revenue growth compared with 2021 is provided for several segments in 2022:\n\n- Data Center net revenue increased by 64%, from $3.7 billion in 2021 to $6 billion in 2022.\n- Client net revenue decreased by 10%, from $6.9 billion in 2021 to $6.2 billion in 2022.\n- Gaming net revenue increased by 21%, from $5.6 billion in 2021 to $6.8 billion in 2022.\n\nThe excerpts do not provide an overall total net revenue growth figure compared with 2021, only segment-level growth rates and amounts (pages 48-49).\n\n**Key Takeaway:** Net revenue grew by 64% in Data Center and 21% in Gaming segments but declined by 10% in Client segment compared with 2021.",
+  "claims": [
+   {
+    "claim": "Data Center net revenue increased by 64%, from $3.7 billion in 2021 to $6 billion in 2022.",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [],
+    "support_pages": [
+     48
+    ],
+    "citation_correct": null
+   },
+   {
+    "claim": "Client net revenue decreased by 10%, from $6.9 billion in 2021 to $6.2 billion in 2022.",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [],
+    "support_pages": [
+     48
+    ],
+    "citation_correct": null
+   },
+   {
+    "claim": "Gaming net revenue increased by 21%, from $5.6 billion in 2021 to $6.8 billion in 2022.",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [],
+    "support_pages": [
+     49
+    ],
+    "citation_correct": null
+   },
+   {
+    "claim": "Net revenue grew by 64% in Data Center and 21% in Gaming segments but declined by 10% in Client segment compared with 2021.",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [],
+    "support_pages": [
+     48,
+     49
+    ],
+    "citation_correct": null
+   }
+  ],
+  "abstained": false,
+  "failures": [
+   "retrieval_miss",
+   "wrong_number"
+  ]
+ },
+ {
+  "note": "'(pages 1, 5, and 41)' once leaked 41 as a stated number; must stay clean",
+  "run": "a654b5e85bbd46cc8adf048aed22038c",
+  "rep": 0,
+  "label": {
+   "query": "Which stock exchange is AMD listed on?",
+   "tag": "easy",
+   "gold": "NASDAQ Global Select Market (NASDAQ)"
+  },
+  "excerpts": [
+   {
+    "text": "AMD was incorporated under the laws of Delaware on May 1, 1969 and became a publicly held company in 1972. Our common stock is currently listed on The NASDAQ Global Select Market (NASDAQ) under the symbol 'AMD'. Our mailing address and executive offices are located at 2485 Augustine Drive, Santa Clara,  California  95054,  and  our  telephone  number  is  (408)  749-4000.  For  financial  information  about  geographic  areas  and  for  segment  information  with respect to revenues and operating results, refer to the information set forth in Note 4 of our consolidated financial statements. We use a 52- or 53-week fiscal year ending on the last Saturday in December. References in this report to 2022, 2021 and 2020 refer to the fiscal year unless explicitly stated otherwise.",
+    "page_start": 5,
+    "page_end": 6
+   },
+   {
+    "text": "Our common stock is listed on The NASDAQ Global Select Market (NASDAQ) under the symbol 'AMD'. On February 22, 2023, there were 5,014 registered holders of our common stock, and the closing price of our common stock was $76.61 per share as reported on NASDAQ.",
+    "page_start": 39,
+    "page_end": 41
+   },
+   {
+    "text": "As of June 24, 2022, the aggregate market value of the registrant's common stock held by non-affiliates of the registrant was approximately $139.8 billion based on the reported closing sale price of $87.08 per share as reported on The NASDAQ Global Select Market (NASDAQ) on June 24, 2022, which was the last business day of the registrant's most recently completed second fiscal quarter.",
+    "page_start": 1,
+    "page_end": 1
+   }
+  ],
+  "answer": "Advanced Micro Devices, Inc. (AMD) is listed on The NASDAQ Global Select Market (NASDAQ) under the stock symbol \"AMD\" (pages 1, 5, and 41). \n\n**Key Takeaway:** AMD's common stock is traded on The NASDAQ Global Select Market under the symbol \"AMD.\"",
+  "claims": [
+   {
+    "claim": "Advanced Micro Devices, Inc. (AMD) is listed on The NASDAQ Global Select Market (NASDAQ) under the stock symbol 'AMD'",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     1,
+     5,
+     41
+    ],
+    "support_pages": [
+     1,
+     5,
+     41
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "Key Takeaway: AMD's common stock is traded on The NASDAQ Global Select Market under the symbol 'AMD.'",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [],
+    "support_pages": [
+     1,
+     5,
+     41
+    ],
+    "citation_correct": null
+   }
+  ],
+  "abstained": false,
+  "failures": []
+ },
+ {
+  "note": "Numbered list markers 2./5. once counted as unsourced numbers; must stay clean",
+  "run": "a654b5e85bbd46cc8adf048aed22038c",
+  "rep": 0,
+  "label": {
+   "query": "What are AMD's five strategic pillars?",
+   "tag": "easy",
+   "gold": "compute technology leadership, expanding data center leadership, enabling pervasive artificial intelligence (AI)"
+  },
+  "excerpts": [
+   {
+    "text": "AMD is focused on high-performance and adaptive computing technology, software and product leadership. Our strategy is to create and deliver the world's leading  high-performance  and  adaptive  computing  products  across  a  diverse  set  of  markets  including  the  data  center,  embedded,  client  and  gaming.  Our strategy is focused on five strategic pillars: compute technology leadership, expanding data center leadership, enabling pervasive artificial intelligence (AI), providing software platforms and developer enablement, and designing custom silicon and solutions.",
+    "page_start": 6,
+    "page_end": 7
+   },
+   {
+    "text": "",
+    "page_start": 43,
+    "page_end": 43
+   },
+   {
+    "text": "",
+    "page_start": 10,
+    "page_end": 11
+   }
+  ],
+  "answer": "AMD's five strategic pillars are:\n\n1. Compute technology leadership  \n2. Expanding data center leadership  \n3. Enabling pervasive artificial intelligence (AI)  \n4. Providing software platforms and developer enablement  \n5. Designing custom silicon and solutions  \n\nThese pillars guide AMD's strategy to create and deliver leading high-performance and adaptive computing products across diverse markets such as data center, embedded, client, and gaming (page 6).  \n\n**Key Takeaway:** AMD's strategy centers on five pillars focused on technology leadership, data center growth, AI enablement, software and developer support, and custom silicon design.",
+  "claims": [
+   {
+    "claim": "AMD's five strategic pillars are: 1. Compute technology leadership 2. Expanding data center leadership 3. Enabling pervasive artificial intelligence (AI) 4. Providing software platforms and developer enablement 5. Designing custom silicon and solutions",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     6
+    ],
+    "support_pages": [
+     6
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "These pillars guide AMD's strategy to create and deliver leading high-performance and adaptive computing products across diverse markets such as data center, embedded, client, and gaming",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     6
+    ],
+    "support_pages": [
+     6
+    ],
+    "citation_correct": true
+   }
+  ],
+  "abstained": false,
+  "failures": []
+ },
+ {
+  "note": "Cites p47 (excerpt's first page) for facts on p48",
+  "run": "cfe9cb6607c740a08782393642e0770c",
+  "rep": 0,
+  "label": {
+   "query": "What was Client segment revenue in 2022 and how did it change?",
+   "tag": "numeric",
+   "gold": "Client net revenue of $6.2 billion in 2022 decreased by 10%",
+   "key_numbers": [
+    "$6.2 billion",
+    "10%"
+   ]
+  },
+  "excerpts": [
+   {
+    "text": "2022 was a transformative year for AMD as we took several major steps that scaled and reshaped our business. In February 2022, we completed our strategic acquisition  of  Xilinx,  Inc.  (Xilinx)  which  expanded  our  technology  and  product  portfolio  to  include  adaptable  hardware  platforms  that  enable  hardware acceleration and rapid innovation across a variety of technologies and established AMD in multiple embedded markets where we have traditionally not had a significant presence. We now offer Field Programmable Gate Arrays (FPGAs), Adaptive SoCs, and Adaptive Compute Acceleration Platform (ACAP) products. With the acquisition of Xilinx, we have access to a new set of markets and customers, further strengthening and diversifying our business model. In May 2022, we  expanded  our  data  center  solutions  capabilities  with  the  acquisition  of  Pensando  Systems,  Inc.  (Pensando).  We  now  offer  high-performance  data processing units (DPUs) and a software stack that complements our existing products. With the Xilinx and Pensando acquisitions, we are well positioned to provide  the  industry's  broadest  set  of  leadership  compute  engines  and  accelerators  to  help  enable  best  performance,  security,  flexibility  and  total  cost  of ownership for leading-edge data centers.\n\nOur 2022 financial results reflect the strength of our diversified business model despite the challenging PC market conditions in the second half of 2022. Net revenue for 2022 was $23.6 billion, an increase of 44% compared to 2021 net revenue of $16.4 billion. The increase in net revenue was driven by a 64% increase  in  Data  Center  segment  revenue  primarily  due  to  higher  sales  of  our  EPYC™  server  processors,  a  21%  increase  in  Gaming  segment  revenue primarily due to higher semi-custom product sales, and a significant increase in Embedded segment revenue from the prior year period driven by the inclusion of Xilinx embedded product sales. This growth was partially offset by a 10% decrease in Client segment revenue primarily due to lower processor shipments driven by a weak PC market and significant inventory correction actions across the PC supply chain. Gross margin, as a percentage of net revenue for 2022, was 45%, compared to 48% in 2021. The decrease in gross margin was primarily due to amortization of intangible assets associated with the Xilinx acquisition. Operating income for 2022 was $1.3 billion compared to operating income of $3.6 billion for 2021. The decrease in operating income was primarily driven by amortization of intangible assets associated with the Xilinx acquisition. Net income for 2022 was $1.3 billion compared to $3.2 billion in the prior year. The decrease in net income was primarily driven by lower operating income.\n\nCash, cash equivalents and short-term investments as of December 31, 2022 were $5.9 billion, compared to $3.6 billion at the end of 2021. Our aggregate principal amount of total debt as of December 31, 2022 was $2.5 billion, compared to $313 million as of December 25, 2021.\n\nWe took several  actions  in  2022  to  strengthen  our  financial  position.  In  June  2022,  we  issued  $1.0  billion  in  aggregate  principal  amount  of  senior  notes, consisting of $500 million in aggregate principal amount of 3.924% Senior Notes due 2032 (3.924% Notes) and $500 million in aggregate principal amount of 4.393% Senior Notes due 2052 (4.393% Notes). The 3.924% Notes will mature on June 1, 2032 and bear interest at a rate of 3.924% per annum, and the 4.393% Notes will mature on June 1, 2052 and bear interest at a rate of 4.393% per annum. The 3.924% Notes and the 4.393% Notes are senior unsecured obligations.",
+    "page_start": 43,
+    "page_end": 43
+   },
+   {
+    "text": "Through the end of 2022, we continue to maintain a valuation allowance of approximately $2.1 billion for certain federal, state, and foreign tax attributes. The federal  valuation  allowance  maintained  is  due  to  limitations,  under  Internal  Revenue  Code  Section  382  or  383,  separate  return  loss  year  rules,  or  dual consolidated loss rules. Certain state and foreign valuation allowances are maintained due to a lack of sufficient sources of future taxable income.\n\nDuring the second quarter of fiscal year 2022, we changed our reporting segments to align our financial reporting with how we manage our business in strategic end markets. This is consistent with how our Chief Operating Decision Maker (CODM) assesses our financial performance and allocates resources. As a result, we report our financial performance based on the following four reportable segments: Data Center, Client, Gaming, and Embedded.\n\nThe following table provides a summary of net revenue and operating income (loss) by segment for 2022 and 2021:\n\nData Center net revenue of $6 billion in 2022 increased by 64%, compared to net revenue of $3.7 billion in 2021. The increase was primarily driven by higher sales of our EPYC server processors.\n\nData Center operating income was $1.8 billion in 2022, compared to operating income of $991 million in 2021. The increase in operating income was primarily driven by higher revenue, partially offset by higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nClient  net  revenue of $6.2 billion in  2022 decreased by 10%, compared to net revenue of $6.9 billion in 2021, primarily driven by a 24% decrease in unit shipment,  partially  offset  by  a  19%  increase  in  average  selling  price.  The  decrease  in  unit  shipments  was  due  to  challenging  PC  market  conditions  and significant inventory correction across the PC supply chain experienced during the second half of 2022. The increase in average selling price was primarily driven by a richer mix of Ryzen mobile processor sales.\n\nClient operating income was $1.2 billion in 2022, compared to operating income of $2.1 billion in 2021. The decrease in operating income was primarily driven by lower revenue and higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nGaming net revenue of $6.8 billion in 2022 increased by 21%, compared to net revenue of $5.6 billion in 2021. The increase in net revenue was driven by higher semi-custom product sales due to higher demand for gaming console SoCs, partially offset by lower gaming graphics sales due to a decrease in unit shipments driven by soft consumer demand given weakened macroeconomic conditions experienced in the second half of 2022.",
+    "page_start": 47,
+    "page_end": 49
+   },
+   {
+    "text": "Industry-wide fluctuations in the computer marketplace have materially adversely affected us in the past and may materially adversely affect us in the future. Global economic uncertainty and weakness have in the past impacted the semiconductor market as consumers and businesses have deferred purchases, which negatively impacted demand for our products. Our financial performance has been, and may in the future be, negatively affected by these downturns. In the second half of 2022, we experienced a decline in our Client segment revenue as a result of weak PC market macroeconomic conditions and inventory correction actions across the PC supply chain.\n\nIndustry-wide fluctuations in the computer marketplace have materially adversely affected us in the past and may materially adversely affect us in the future. Our Client segment revenue is focused on the consumer desktop and notebook PC segments, which in the second half of 2022 experienced a decline as a result of weak PC market macroeconomic conditions and inventory correction actions across the PC supply chain. In the past, revenues from the Client and Gaming segments have experienced a decline driven by, among other factors, the  adoption  of  smaller  and  other  form  factors,  increased  competition  and changes in replacement cycles. The success of our semi-custom SoC products is dependent on securing customers for our semi-custom design pipeline and consumer market conditions, including the success of the Sony PlayStation® 5, Microsoft® Xbox Series S and Microsoft® Xbox Series X game console systems  and  next  generation  consoles  for  Sony  and  Microsoft,  worldwide.  In  addition,  the  GPU  market  has  at  times  seen  elevated  demand  due  to  the application of GPU products to cryptocurrency mining. For example, our GPU revenue has been affected in part by the volatility of the cryptocurrency mining market. Demand for cryptocurrency has changed and is likely to continue to change quickly. For example, China has banned such activities, and corresponding interest  in  mining  of  such  currencies  are  subject  to  significant  fluctuations.  Alternatively,  countries  have  created  and  may  continue  to  create  their  own cryptocurrencies or equivalents that could also impact interest in mining. If we are unable to manage the risks related to the volatility of the cryptocurrency mining market, our GPU business could be materially adversely affected. TM TM",
+    "page_start": 20,
+    "page_end": 21
+   },
+   {
+    "text": "We invest in high-performance CPUs for cloud infrastructure, enterprise, edge, supercomputing, and PCs. We invest in high-performance GPUs and software for markets such as gaming, compute, AI, and virtual reality (VR) and augmented reality (AR). With the acquisition of Xilinx, Inc. (XIlinx) in February 2022, our product portfolio now includes FPGAs and Adaptive SoCs used in the data center and embedded markets. Also, with the acquisition of Pensando Systems, Inc. in May 2022, we offer high-performance DPUs and next generation data center solutions.",
+    "page_start": 6,
+    "page_end": 7
+   }
+  ],
+  "answer": "The Client segment revenue for AMD in 2022 was $6.2 billion, which represented a 10% decrease compared to $6.9 billion in 2021. This decline was primarily driven by a 24% decrease in unit shipments due to challenging PC market conditions and significant inventory correction actions across the PC supply chain in the second half of 2022. The decrease in shipments was partially offset by a 19% increase in average selling price, mainly due to a richer mix of Ryzen mobile processor sales (page 47). The Client segment operating income also decreased from $2.1 billion in 2021 to $1.2 billion in 2022, primarily due to lower revenue and higher operating expenses (page 47). The decline in Client segment revenue was attributed to weak PC market macroeconomic conditions and inventory corrections (pages 43, 47, 48).\n\n**Key Takeaway:** AMD's Client segment revenue in 2022 was $6.2 billion, down 10% from 2021, mainly due to lower unit shipments amid weak PC market conditions and inventory corrections.",
+  "claims": [
+   {
+    "claim": "The Client segment revenue for AMD in 2022 was $6.2 billion",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "support_pages": [
+     48
+    ],
+    "citation_correct": false
+   },
+   {
+    "claim": "Client segment revenue in 2022 represented a 10% decrease compared to $6.9 billion in 2021",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "support_pages": [
+     48
+    ],
+    "citation_correct": false
+   },
+   {
+    "claim": "The decline was primarily driven by a 24% decrease in unit shipments due to challenging PC market conditions and significant inventory correction actions across the PC supply chain in the second half of 2022",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "support_pages": [
+     48
+    ],
+    "citation_correct": false
+   },
+   {
+    "claim": "The decrease in shipments was partially offset by a 19% increase in average selling price, mainly due to a richer mix of Ryzen mobile processor sales",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "support_pages": [
+     48
+    ],
+    "citation_correct": false
+   },
+   {
+    "claim": "The Client segment operating income also decreased from $2.1 billion in 2021 to $1.2 billion in 2022, primarily due to lower revenue and higher operating expenses",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     47
+    ],
+    "support_pages": [
+     48
+    ],
+    "citation_correct": false
+   },
+   {
+    "claim": "The decline in Client segment revenue was attributed to weak PC market macroeconomic conditions and inventory corrections",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     43,
+     47,
+     48
+    ],
+    "support_pages": [
+     43,
+     48,
+     20
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "Key Takeaway: AMD's Client segment revenue in 2022 was $6.2 billion, down 10% from 2021, mainly due to lower unit shipments amid weak PC market conditions and inventory corrections",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [],
+    "support_pages": [
+     48,
+     43,
+     20
+    ],
+    "citation_correct": null
+   }
+  ],
+  "abstained": false,
+  "failures": [
+   "wrong_page"
+  ]
+ },
+ {
+  "note": "Refusal lists 'pages 102-105'; excerpts end at p104",
+  "run": "cfe9cb6607c740a08782393642e0770c",
+  "rep": 0,
+  "label": {
+   "query": "Is AMD planning a stock split?",
+   "tag": "no-answer"
+  },
+  "excerpts": [
+   {
+    "text": "",
+    "page_start": 44,
+    "page_end": 44
+   },
+   {
+    "text": "",
+    "page_start": 41,
+    "page_end": 43
+   },
+   {
+    "text": "",
+    "page_start": 5,
+    "page_end": 6
+   },
+   {
+    "text": "",
+    "page_start": 103,
+    "page_end": 104
+   },
+   {
+    "text": "",
+    "page_start": 102,
+    "page_end": 103
+   }
+  ],
+  "answer": "The provided excerpts from AMD's filings do not mention any plans or intentions by AMD to conduct a stock split. The excerpts discuss AMD's stock repurchase programs, equity awards, and stock option agreements but contain no information about a stock split (pages 41-44, 102-105).\n\n**Key Takeaway:** AMD is not disclosed as planning a stock split in the provided document excerpts.",
+  "claims": [],
+  "abstained": true,
+  "failures": [
+   "fake_page"
+  ]
+ },
+ {
+  "note": "Clean numeric answer; must stay clean",
+  "run": "cfe9cb6607c740a08782393642e0770c",
+  "rep": 0,
+  "label": {
+   "query": "What was AMD's net revenue in 2022?",
+   "tag": "numeric",
+   "gold": "Net revenue for 2022 was $23.6 billion",
+   "key_numbers": [
+    "$23.6 billion"
+   ]
+  },
+  "excerpts": [
+   {
+    "text": "Through the end of 2022, we continue to maintain a valuation allowance of approximately $2.1 billion for certain federal, state, and foreign tax attributes. The federal  valuation  allowance  maintained  is  due  to  limitations,  under  Internal  Revenue  Code  Section  382  or  383,  separate  return  loss  year  rules,  or  dual consolidated loss rules. Certain state and foreign valuation allowances are maintained due to a lack of sufficient sources of future taxable income.\n\nDuring the second quarter of fiscal year 2022, we changed our reporting segments to align our financial reporting with how we manage our business in strategic end markets. This is consistent with how our Chief Operating Decision Maker (CODM) assesses our financial performance and allocates resources. As a result, we report our financial performance based on the following four reportable segments: Data Center, Client, Gaming, and Embedded.\n\nThe following table provides a summary of net revenue and operating income (loss) by segment for 2022 and 2021:\n\nData Center net revenue of $6 billion in 2022 increased by 64%, compared to net revenue of $3.7 billion in 2021. The increase was primarily driven by higher sales of our EPYC server processors.\n\nData Center operating income was $1.8 billion in 2022, compared to operating income of $991 million in 2021. The increase in operating income was primarily driven by higher revenue, partially offset by higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nClient  net  revenue of $6.2 billion in  2022 decreased by 10%, compared to net revenue of $6.9 billion in 2021, primarily driven by a 24% decrease in unit shipment,  partially  offset  by  a  19%  increase  in  average  selling  price.  The  decrease  in  unit  shipments  was  due  to  challenging  PC  market  conditions  and significant inventory correction across the PC supply chain experienced during the second half of 2022. The increase in average selling price was primarily driven by a richer mix of Ryzen mobile processor sales.\n\nClient operating income was $1.2 billion in 2022, compared to operating income of $2.1 billion in 2021. The decrease in operating income was primarily driven by lower revenue and higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nGaming net revenue of $6.8 billion in 2022 increased by 21%, compared to net revenue of $5.6 billion in 2021. The increase in net revenue was driven by higher semi-custom product sales due to higher demand for gaming console SoCs, partially offset by lower gaming graphics sales due to a decrease in unit shipments driven by soft consumer demand given weakened macroeconomic conditions experienced in the second half of 2022.",
+    "page_start": 47,
+    "page_end": 49
+   },
+   {
+    "text": "2022 was a transformative year for AMD as we took several major steps that scaled and reshaped our business. In February 2022, we completed our strategic acquisition  of  Xilinx,  Inc.  (Xilinx)  which  expanded  our  technology  and  product  portfolio  to  include  adaptable  hardware  platforms  that  enable  hardware acceleration and rapid innovation across a variety of technologies and established AMD in multiple embedded markets where we have traditionally not had a significant presence. We now offer Field Programmable Gate Arrays (FPGAs), Adaptive SoCs, and Adaptive Compute Acceleration Platform (ACAP) products. With the acquisition of Xilinx, we have access to a new set of markets and customers, further strengthening and diversifying our business model. In May 2022, we  expanded  our  data  center  solutions  capabilities  with  the  acquisition  of  Pensando  Systems,  Inc.  (Pensando).  We  now  offer  high-performance  data processing units (DPUs) and a software stack that complements our existing products. With the Xilinx and Pensando acquisitions, we are well positioned to provide  the  industry's  broadest  set  of  leadership  compute  engines  and  accelerators  to  help  enable  best  performance,  security,  flexibility  and  total  cost  of ownership for leading-edge data centers.\n\nOur 2022 financial results reflect the strength of our diversified business model despite the challenging PC market conditions in the second half of 2022. Net revenue for 2022 was $23.6 billion, an increase of 44% compared to 2021 net revenue of $16.4 billion. The increase in net revenue was driven by a 64% increase  in  Data  Center  segment  revenue  primarily  due  to  higher  sales  of  our  EPYC™  server  processors,  a  21%  increase  in  Gaming  segment  revenue primarily due to higher semi-custom product sales, and a significant increase in Embedded segment revenue from the prior year period driven by the inclusion of Xilinx embedded product sales. This growth was partially offset by a 10% decrease in Client segment revenue primarily due to lower processor shipments driven by a weak PC market and significant inventory correction actions across the PC supply chain. Gross margin, as a percentage of net revenue for 2022, was 45%, compared to 48% in 2021. The decrease in gross margin was primarily due to amortization of intangible assets associated with the Xilinx acquisition. Operating income for 2022 was $1.3 billion compared to operating income of $3.6 billion for 2021. The decrease in operating income was primarily driven by amortization of intangible assets associated with the Xilinx acquisition. Net income for 2022 was $1.3 billion compared to $3.2 billion in the prior year. The decrease in net income was primarily driven by lower operating income.\n\nCash, cash equivalents and short-term investments as of December 31, 2022 were $5.9 billion, compared to $3.6 billion at the end of 2021. Our aggregate principal amount of total debt as of December 31, 2022 was $2.5 billion, compared to $313 million as of December 25, 2021.\n\nWe took several  actions  in  2022  to  strengthen  our  financial  position.  In  June  2022,  we  issued  $1.0  billion  in  aggregate  principal  amount  of  senior  notes, consisting of $500 million in aggregate principal amount of 3.924% Senior Notes due 2032 (3.924% Notes) and $500 million in aggregate principal amount of 4.393% Senior Notes due 2052 (4.393% Notes). The 3.924% Notes will mature on June 1, 2032 and bear interest at a rate of 3.924% per annum, and the 4.393% Notes will mature on June 1, 2052 and bear interest at a rate of 4.393% per annum. The 3.924% Notes and the 4.393% Notes are senior unsecured obligations.",
+    "page_start": 43,
+    "page_end": 43
+   },
+   {
+    "text": "Gaming operating income was $953 million in 2022, compared to operating income of $934 million in 2021. The increase in operating income was primarily driven by higher revenue, partially offset by higher operating expenses. Operating expenses increased for the reasons outlined under 'Expenses' below.\n\nEmbedded net revenue of $4.6 billion in 2022 increased significantly, compared to net revenue of $246 million in 2021. The significant increase in net revenue was primarily driven by the inclusion of Xilinx embedded product revenue as a result of the acquisition of Xilinx in February 2022.\n\nEmbedded operating income was $2.3 billion in 2022, compared to operating income of $44 million in 2021. The significant increase in operating income was primarily driven by the inclusion of Xilinx embedded product revenue.\n\nAll Other operating loss of $5.0 billion in 2022 primarily consisted of $3.5 billion of amortization of acquisition-related intangibles, $1.1 billion of stock-based compensation expense, and $452 million of acquisition-related costs, which primarily include transaction costs, amortization of Xilinx inventory fair value stepup adjustment, and depreciation related to the Xilinx fixed assets fair value step-up adjustment, certain compensation charges related to the acquisitions of Xilinx  and  Pensando,  and  licensing  gain. All  Other  operating  loss  of  $409  million  in  2021  primarily  consisted  of  $379  million  of  stock-based  compensation expense and $42 million of acquisition-related costs.\n\nThe following is a summary of certain consolidated statement of operations data for 2022 and 2021:\n\nGross margin as a percentage of net revenue was 45% in 2022 compared to 48% in 2021. The decrease in gross margin was primarily due to amortization of intangible assets associated with the Xilinx acquisition.\n\nResearch and development expenses of $5.0 billion in 2022 increased by $2.2 billion, or 76%, compared to $2.8 billion in 2021. The increase was primarily driven by strategic investments across all of our segments, including an increase in headcount through acquisitions and organic growth.\n\nMarketing, general and administrative expenses of $2.3 billion in 2022 increased by $888 million, or 61%, compared to $1.4 billion in 2021. The increase was primarily due to an increase in headcount through acquisitions and organic growth, go-to-market activities, and acquisition-related costs.\n\nIn 2022, cost of sales and operating expense included $1.4 billion and $2.1 billion, respectively, of amortization expense from intangible assets acquired as a result of the acquisitions of Xilinx and Pensando.\n\nDuring 2022, we recognized $102 million of licensing gain from milestone achievement and royalty income associated with the licensed IP to the THATIC JV, our two joint ventures with Higon Information Technology Co., Ltd., a third-party Chinese entity. We recognized a licensing gain from royalty income of $12 million for the year ended December 25, 2021.\n\nInterest expense of $88 million in 2022 increased by $54 million compared to $34 million in 2021, primarily due to interest expense from the 2.95% Senior Notes due 2024 and the 2.375% Senior Notes due 2030 (together, the Assumed Xilinx Notes) and the 3.924% Notes and 4.393% Notes issued in 2022.\n\nOther income, net was $8 million in 2022 compared to $55 million of Other income, net in 2021. The change was primarily due to a $62 million decrease in the fair value of equity investments in 2022 compared to an increase in fair value of $56 million from equity investments in 2021, partially offset by $65 million of interest income driven mainly by rising interest rates in 2022 compared to losses from conversion of our convertible debt of $7 million in 2021.",
+    "page_start": 49,
+    "page_end": 50
+   }
+  ],
+  "answer": "AMD's net revenue in 2022 was $23.6 billion, representing a 44% increase compared to $16.4 billion in 2021 (page 43). This revenue growth was driven by a 64% increase in Data Center segment revenue, a 21% increase in Gaming segment revenue, and a significant increase in Embedded segment revenue due to the acquisition of Xilinx, partially offset by a 10% decrease in Client segment revenue (pages 43, 48-49).\n\n**Key Takeaway:** AMD's net revenue in 2022 was $23.6 billion.",
+  "claims": [
+   {
+    "claim": "AMD's net revenue in 2022 was $23.6 billion",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     43
+    ],
+    "support_pages": [
+     43
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "This represented a 44% increase compared to $16.4 billion in 2021",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     43
+    ],
+    "support_pages": [
+     43
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "The revenue growth was driven by a 64% increase in Data Center segment revenue",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     43,
+     48,
+     49
+    ],
+    "support_pages": [
+     43
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "The revenue growth was driven by a 21% increase in Gaming segment revenue",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     43,
+     48,
+     49
+    ],
+    "support_pages": [
+     43
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "The revenue growth was driven by a significant increase in Embedded segment revenue due to the acquisition of Xilinx",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     43,
+     48,
+     49
+    ],
+    "support_pages": [
+     43
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "The revenue growth was partially offset by a 10% decrease in Client segment revenue",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [
+     43,
+     48,
+     49
+    ],
+    "support_pages": [
+     43
+    ],
+    "citation_correct": true
+   },
+   {
+    "claim": "Key Takeaway: AMD's net revenue in 2022 was $23.6 billion",
+    "kind": "fact",
+    "supported": true,
+    "cited_pages": [],
+    "support_pages": [
+     43
+    ],
+    "citation_correct": null
+   }
+  ],
+  "abstained": false,
+  "failures": []
+ }
+]
