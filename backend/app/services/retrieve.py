@@ -107,24 +107,17 @@ def hybrid_search(
 
 
 def consolidate(hits: list[Hit], threshold: int | None = None) -> tuple[list[str], dict[str, int]]:
-    """Return (winning_parent_ids, all_votes).
+    """Return (parent_ids, all_votes): every parent with a child in the top-K,
+    parents with >= `threshold` child hits first, the rest by best-child rank.
 
-    Winners = parents with >= `threshold` children in the top-K. If none
-    clear the bar, fall back to the top-3 unique parents ordered by their
-    best child's score — this keeps the LLM context grounded even when
-    votes are spread thin (common on short queries like 'when did X start?')."""
+    Votes only order parents. Dropping the rest (the old rule, with a top-3
+    fallback when nothing cleared the bar) discarded the gold parent for 5 of
+    37 AMD 10-K eval queries, once at rank 1, because another parent had 3 votes."""
     th = threshold if threshold is not None else settings.PARENT_CONSOLIDATION_THRESHOLD
     votes = Counter(h.parent_id for h in hits if h.parent_id)
-    winners = [p for p, _ in votes.most_common() if votes[p] >= th]
-    if not winners and hits:
-        seen: list[str] = []
-        for h in hits:
-            if h.parent_id and h.parent_id not in seen:
-                seen.append(h.parent_id)
-            if len(seen) >= 3:
-                break
-        winners = seen
-    return winners, dict(votes)
+    ranked = list(dict.fromkeys(h.parent_id for h in hits if h.parent_id))  # hits are best-first
+    # ponytail: context grows to top_k parents (5 by default); cap it if callers raise top_k a lot
+    return sorted(ranked, key=lambda p: votes[p] < th), dict(votes)
 
 
 def fetch_parent_texts(db: Session, parent_ids: list[str]) -> list[ParentChunk]:

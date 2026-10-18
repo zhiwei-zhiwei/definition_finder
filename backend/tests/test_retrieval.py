@@ -86,3 +86,10 @@ def test_contextualized_prepends_context():
     assert _contextualized("Section 2 covers X.", "the body") == "Section 2 covers X.\n\nthe body"
     assert _contextualized(None, "the body") == "the body"
     assert _contextualized("", "the body") == "the body"
+
+
+def test_consolidate_keeps_every_top_k_parent():
+    hit = lambda pid: retrieve.Hit("c", pid, "", 0.0, None, None, [], None)  # noqa: E731
+    # "gold" ranks first; a 3-vote parent used to knock it (and "x") out of the context.
+    winners, votes = retrieve.consolidate([hit("gold"), hit("big"), hit("big"), hit("x"), hit("big")], 3)
+    assert winners == ["big", "gold", "x"] and votes == {"gold": 1, "big": 3, "x": 1}

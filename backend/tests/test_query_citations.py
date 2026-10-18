@@ -35,7 +35,9 @@ def test_summary_context_keeps_pages_aligned(client, monkeypatch):
 
     ctx = seen["context"]
     assert "### Excerpt 1 \nno-page text" in ctx
-    assert "### Excerpt 2 (page 7)\n[page 7] page-seven text" in ctx
+    assert "### Excerpt 2 \n[page 7] page-seven text" in ctx  # markers replace the first-page header
+    assert "(page 7)" not in query_route.summarize._format_context("q", ["[page 7] a\n\n[page 8] b"], [7])
+    assert "### Excerpt 1 (page 3)\nold" in query_route.summarize._format_context("q", ["old"], [3])  # pre-marker docs
 
 
 def test_parent_marks_each_page_break():
