@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: ./backend
+    env_file: backend/.env
+    ports: ["8000:8000"]
+    volumes:
+      # Same data/ as local dev; .env's ../data/... paths resolve to /app/data from /app/backend
+      - ./data:/app/data
+      # Docling / Hugging Face model downloads survive container rebuilds
+      - model-cache:/root/.cache
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # The browser calls the API, so this is the host's address, not http://backend:8000
+        NEXT_PUBLIC_API_BASE: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on: [backend]
+
+volumes:
+  model-cache:

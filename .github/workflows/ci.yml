@@ -1,0 +1,60 @@
+name: CI
+
+# Every push on any branch; a PR shows the checks of its head commit, so no pull_request trigger
+on:
+  push:
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the run still going for the old commit
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      UV_SYSTEM_PYTHON: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/pyproject.toml
+      # CPU torch first (same reason as backend/Dockerfile): skips ~3 GB of CUDA wheels
+      - run: uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+      - run: uv pip install -e ".[dev]"
+      - name: ruff
+        run: ruff check app scripts tests
+      - name: pytest
+        run: pytest -q
+      # Offline retrieval gate: replays the frozen AMD 10-K fixture, exits 1 below the floors in eval_smoke.py
+      - name: retrieval gate
+        run: python scripts/eval_smoke.py
+
+  images:
+    needs: backend
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      # Build only (push: false) to prove the Dockerfile works; layers cached in the Actions cache
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.app }}
+          push: false
+          tags: lexisai-${{ matrix.app }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.app }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.app }}
