@@ -43,7 +43,7 @@ def test_mrr_and_recall_at_k():
 def test_comparison_report_counts_rank_moves():
     def mk(q, rank):
         return {"label": {"query": q, "tag": "t"}, "rank": rank, "gold_ranks": [rank],
-                "embed_ms": 1.0, "search_ms": 1.0, "total_ms": 2.0}
+                "embed_ms": 1.0, "search_ms": 1.0, "rerank_ms": 0.0, "total_ms": 2.0}
     det = {"base": [mk("up", None), mk("down", 1), mk("same", 2)],
            "ctx": [mk("up", 4), mk("down", 3), mk("same", 2)]}
     summ = {n: ev._metrics(det[n]) for n in det}

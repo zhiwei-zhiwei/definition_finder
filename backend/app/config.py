@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     CHILD_TOKENS: int = 120
 
     DEFAULT_TOP_K: int = 5
+    # Cross-encoder reranker (Hugging Face model id, e.g. BAAI/bge-reranker-v2-m3); empty = off.
+    # It rescores the top RERANK_CANDIDATES fused hits and keeps the top k.
+    # Off by default: bge-reranker-v2-m3 cut grounding failures 12.9% -> 6.8% on the AMD 10-K but
+    # costs ~5.6 s/query on an M1 (MPS); turn it on where it runs on a GPU (e.g. a TEI pod).
+    RERANK_MODEL: str = ""
+    RERANK_CANDIDATES: int = 50
     PARENT_CONSOLIDATION_THRESHOLD: int = 3
 
     UPLOAD_DIR: str = "../data/uploads"

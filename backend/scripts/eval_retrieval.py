@@ -12,6 +12,8 @@ Usage (from backend/, venv active, OPENAI_API_KEY in .env):
         --top-k 20
 
 Add --baseline-only to skip the contextual pass (the expensive, rate-limit-prone half).
+Add --rerank BAAI/bge-reranker-v2-m3 to compare plain hybrid against hybrid + that
+cross-encoder instead (one prepare, no contextual pass, no LLM calls).
 
 Labels file: JSON list of {"query": str, "gold": str | [str, ...], "tag": str}.
 A query "passes@k" when any gold substring appears (case-insensitive, whitespace-
@@ -26,8 +28,8 @@ Metrics per mode (all over the scored queries):
   recall_at_k  share of each query's gold passages found in the top k, averaged;
                equals pass_at_k for single-gold queries
   mrr          mean of 1/rank of the first gold hit (a miss beyond top-k scores 0)
-  latency_*    p50/p95 wall time (ms) of the query embed call, the hybrid search,
-               and their sum
+  latency_*    p50/p95 wall time (ms) of the query embed call, the hybrid search
+               (reranking included), the reranker alone, and embed + search
   prepare_seconds  wall time of the whole prepare (Docling + context + embed)
 
 Every run is logged to MLflow: one parent run per invocation (shared params +
@@ -52,7 +54,7 @@ import numpy as np
 from app.config import settings
 from app.models.db import SessionLocal, init_db
 from app.models.schema import ChildChunk, Document
-from app.services import context, prepare, retrieve
+from app.services import context, prepare, rerank, retrieve
 
 _KS = (1, 3, 5, 10, 20)
 _MLFLOW_DIR = Path(__file__).resolve().parents[2] / "data" / "mlflow"
@@ -97,6 +99,17 @@ def _first_match_rank(snippet_texts: list[str], golds: list[str]) -> int | None:
 def _evaluate(doc_id: str, labels: list[dict], top_k: int) -> list[dict]:
     """One record per scored label: gold ranks plus embed/search wall time in ms."""
     out: list[dict] = []
+    spent = [0.0]  # reranker seconds for the current query
+    real = retrieve.rerank_service.score
+
+    def timed(*a):
+        t = time.perf_counter()
+        try:
+            return real(*a)
+        finally:
+            spent[0] += time.perf_counter() - t
+
+    retrieve.rerank_service.score = timed
     with SessionLocal() as db:
         for label in labels:
             if "gold" not in label:
@@ -114,8 +127,11 @@ def _evaluate(doc_id: str, labels: list[dict], top_k: int) -> list[dict]:
                 "gold_ranks": granks,
                 "embed_ms": (t1 - t0) * 1000,
                 "search_ms": (t2 - t1) * 1000,
+                "rerank_ms": spent[0] * 1000,
                 "total_ms": (t2 - t0) * 1000,
             })
+            spent[0] = 0.0
+    retrieve.rerank_service.score = real
     return out
 
 
@@ -142,7 +158,7 @@ def _metrics(recs: list[dict]) -> dict[str, float]:
     m = {f"pass_at_{k}": v for k, v in _passk(ranks).items()}
     m |= {f"recall_at_{k}": v for k, v in _recallk([r["gold_ranks"] for r in recs]).items()}
     m["mrr"] = _mrr(ranks)
-    for part in ("embed", "search", "total"):
+    for part in ("embed", "search", "rerank", "total"):
         ms = [r[f"{part}_ms"] for r in recs]
         # ponytail: p95 over ~40 queries is roughly the 2nd-slowest; needs more queries to be stable
         m[f"latency_{part}_p50_ms"] = float(np.percentile(ms, 50)) if ms else 0.0
@@ -260,13 +276,14 @@ def _log_mlflow(args, modes, summ, per_mode_detail, prep_s, invalid, n_skipped) 
 
     _mlflow_experiment(args.experiment)
 
-    names = [n for n, _ in modes]
+    names = [n for n, *_ in modes]
     common = {
         "pdf": args.pdf.name, "labels": args.labels.name, "top_k": args.top_k,
         "n_scored": len(per_mode_detail[names[0]]), "n_no_answer_skipped": n_skipped,
         "embed_model": settings.EMBED_MODEL, "embed_dim": settings.EMBED_DIM,
         "context_model": settings.CONTEXT_MODEL, "parent_tokens": settings.PARENT_TOKENS,
         "child_tokens": settings.CHILD_TOKENS, "context_workers": context._MAX_WORKERS,
+        "rerank_candidates": settings.RERANK_CANDIDATES, "rerank_load_seconds": round(args.rerank_load_s, 1),
     }
     with mlflow.start_run(run_name=f"{args.pdf.stem} {'A/B' if len(names) == 2 else names[0]}") as parent:
         mlflow.log_params(common | {"modes": ",".join(names)})
@@ -276,7 +293,7 @@ def _log_mlflow(args, modes, summ, per_mode_detail, prep_s, invalid, n_skipped) 
             mlflow.log_metrics({f"delta_{k}": b[k] - a[k] for k in a}
                                | {"delta_prepare_seconds": prep_s[names[1]] - prep_s[names[0]]})
             _log_report(args.pdf.stem, names, summ, prep_s, per_mode_detail)
-        for name, flag in modes:
+        for name, flag, rerank_model in modes:
             recs = per_mode_detail[name]
             tag_m = {}
             for tag in sorted({r["label"].get("tag", "untagged") for r in recs}):
@@ -284,7 +301,8 @@ def _log_mlflow(args, modes, summ, per_mode_detail, prep_s, invalid, n_skipped) 
                 tag_m |= {f"tag_{tag}_pass_at_{k}": v for k, v in _passk(rs).items()}
                 tag_m[f"tag_{tag}_mrr"] = _mrr(rs)
             with mlflow.start_run(run_name=name, nested=True):
-                mlflow.log_params(common | {"mode": name, "contextual_embeddings": flag})
+                mlflow.log_params(common | {"mode": name, "contextual_embeddings": flag,
+                                            "rerank_model": rerank_model or "off"})
                 mlflow.set_tag("valid", str(name not in invalid))
                 if name in invalid:
                     mlflow.set_tag("invalid_reason", invalid[name])
@@ -295,6 +313,7 @@ def _log_mlflow(args, modes, summ, per_mode_detail, prep_s, invalid, n_skipped) 
                     "rank": [r["rank"] if r["rank"] is not None else -1 for r in recs],  # -1 = miss
                     "embed_ms": [round(r["embed_ms"], 1) for r in recs],
                     "search_ms": [round(r["search_ms"], 1) for r in recs],
+                    "rerank_ms": [round(r["rerank_ms"], 1) for r in recs],
                 }, artifact_file="per_query.json")
                 if len(names) == 2:  # same A/B report on each mode, so it's there whichever run is opened
                     _log_report(args.pdf.stem, names, summ, prep_s, per_mode_detail)
@@ -309,6 +328,7 @@ def main() -> None:
     ap.add_argument("--top-k", type=int, default=20)
     ap.add_argument("--keep", action="store_true", help="keep the prepared doc (last mode) instead of deleting it")
     ap.add_argument("--baseline-only", action="store_true", help="skip the contextual pass (no per-parent LLM calls)")
+    ap.add_argument("--rerank", metavar="MODEL", help="compare hybrid vs hybrid + this cross-encoder (skips contextual)")
     ap.add_argument("--experiment", help="MLflow experiment name (default: eval-<labels file stem>)")
     args = ap.parse_args()
     args.experiment = args.experiment or f"eval-{args.labels.stem}"
@@ -318,8 +338,10 @@ def main() -> None:
     skipped = sum(1 for lab in labels if "gold" not in lab)
     print(f"loaded {len(labels)} labelled queries ({skipped} no-answer skipped); top_k={args.top_k}")
 
-    modes = [("baseline", False)] + ([] if args.baseline_only else [("contextual", True)])
-    names = [n for n, _ in modes]
+    modes = [("baseline", False, "")] + (
+        [(args.rerank.split("/")[-1], False, args.rerank)] if args.rerank
+        else [] if args.baseline_only else [("contextual", True, "")])
+    names = [n for n, *_ in modes]
     per_mode_detail: dict[str, list[dict]] = {}
     prep_s: dict[str, float] = {}
 
@@ -329,14 +351,26 @@ def main() -> None:
     context._MAX_WORKERS = 1
     invalid: dict[str, str] = {}
 
+    args.rerank_load_s = 0.0
+    if args.rerank:  # load + warm up once, so the first query's latency is the reranker's, not the download's
+        t0 = time.perf_counter()
+        rerank.score(args.rerank, "warm up", ["warm up " * 60] * settings.RERANK_CANDIDATES)
+        args.rerank_load_s = time.perf_counter() - t0
+        print(f"reranker {args.rerank} loaded in {args.rerank_load_s:.1f}s")
+
     doc_id = _ingest_doc(args.pdf)
     try:
-        for name, flag in modes:
-            settings.CONTEXTUAL_EMBEDDINGS = flag
-            print(f"\n=== mode: {name} (CONTEXTUAL_EMBEDDINGS={flag}) — preparing… ===")
-            t0 = time.perf_counter()
-            asyncio.run(_prepare(doc_id))
-            prep_s[name] = time.perf_counter() - t0
+        prepared = None  # contextual flag the doc is currently prepared with
+        for name, flag, rerank_model in modes:
+            settings.CONTEXTUAL_EMBEDDINGS, settings.RERANK_MODEL = flag, rerank_model
+            if flag != prepared:
+                print(f"\n=== mode: {name} (CONTEXTUAL_EMBEDDINGS={flag}) — preparing… ===")
+                t0 = time.perf_counter()
+                asyncio.run(_prepare(doc_id))
+                prep_s[name], prepared = time.perf_counter() - t0, flag
+            else:  # same chunks + vectors, so reuse the prepare
+                print(f"\n=== mode: {name} (RERANK_MODEL={rerank_model}) — reusing the prepared doc ===")
+                prep_s[name] = prep_s[names[0]]
             if flag:
                 empty, total = _empty_context(doc_id)
                 if empty:

@@ -405,7 +405,8 @@ def main() -> None:
               "top_k": args.top_k, "answer_model": settings.CHAT_MODEL, "judge_model": args.judge_model,
               "contextual_embeddings": settings.CONTEXTUAL_EMBEDDINGS, "embed_model": settings.EMBED_MODEL,
               "parent_tokens": settings.PARENT_TOKENS, "child_tokens": settings.CHILD_TOKENS,
-              "rejudged_run": args.rejudge or "", "only": args.only.name if args.only else ""}
+              "rejudged_run": args.rejudge or "", "only": args.only.name if args.only else "",
+              "rerank_model": settings.RERANK_MODEL or "off"}
     report = _report(args.pdf.stem, summ, recs, params)
     print("\n" + report.split("## By tag")[1].split("## Unsupported")[0].strip())
     _log_mlflow(args, params, summ, per_rep, recs, report)

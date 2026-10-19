@@ -93,3 +93,19 @@ def test_consolidate_keeps_every_top_k_parent():
     # "gold" ranks first; a 3-vote parent used to knock it (and "x") out of the context.
     winners, votes = retrieve.consolidate([hit("gold"), hit("big"), hit("big"), hit("x"), hit("big")], 3)
     assert winners == ["big", "gold", "x"] and votes == {"gold": 1, "big": 3, "x": 1}
+
+
+def test_rerank_reorders_fused_pool(client, monkeypatch):
+    doc_id = _seed([
+        {"text": "alpha statute clause", "embedding": [1.0, 0.0]},
+        {"text": "beta unrelated", "embedding": [0.0, 1.0]},
+        {"text": "gamma unrelated", "embedding": [0.0, 1.0]},
+    ], parent_page=1)
+    with SessionLocal() as db:
+        plain = [h.text for h in retrieve.hybrid_search(db, doc_id, [1.0, 0.0], "alpha", top_k=2)]
+        monkeypatch.setattr(retrieve.settings, "RERANK_MODEL", "fake")
+        monkeypatch.setattr(retrieve.rerank_service, "score", lambda m, q, ts: [0.9 if "gamma" in t else 0.1 for t in ts])
+        hits = retrieve.hybrid_search(db, doc_id, [1.0, 0.0], "alpha", top_k=2)
+    assert plain[0] == "alpha statute clause" and "gamma unrelated" not in plain
+    # gamma was outside the plain top 2; the reranker pulls it from the candidate pool to rank 1
+    assert [h.text for h in hits][0] == "gamma unrelated" and hits[0].score == 1.0 and len(hits) == 2

@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.schema import ChildChunk, ParentChunk
 from app.services import bm25 as bm25_service
+from app.services import rerank as rerank_service
 from app.services import vectorstore
 from app.services.embed import embed_batch
 
@@ -85,8 +86,11 @@ def hybrid_search(
     - BM25 arm captures rare lexical matches (proper nouns, statute codes).
     - Fused score replaces the per-arm score on the returned Hit so the UI
       reflects the hybrid ranking.
+    - With RERANK_MODEL set, a cross-encoder rescores the top RERANK_CANDIDATES
+      fused hits; its score orders them and replaces the fused one.
     """
-    n = candidate_n or max(top_k * 4, 20)
+    rerank_n = settings.RERANK_CANDIDATES if settings.RERANK_MODEL else 0
+    n = candidate_n or max(top_k * 4, 20, rerank_n)
     vec_ranked = vectorstore.search(db, doc_id, qvec, n)
     bm25_ranked = bm25_service.bm25_search(db, doc_id, query_text, n)
 
@@ -99,11 +103,18 @@ def hybrid_search(
     if not fused:
         return []
 
-    ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)[:top_k]
-    top_score = ranked[0][1] if ranked else 1.0
+    ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)[: max(top_k, rerank_n)]
+    hits = _hydrate_hits(db, dict(ranked), [cid for cid, _ in ranked])
+    if rerank_n:
+        for h, s in zip(hits, rerank_service.score(settings.RERANK_MODEL, query_text, [h.text for h in hits])):
+            h.score = s
+        hits.sort(key=lambda h: h.score, reverse=True)
+    hits = hits[:top_k]
     # Normalize by the top hit so the UI's percentage badge stays in [0, 1].
-    scores = {cid: (s / top_score if top_score > 0 else 0.0) for cid, s in ranked}
-    return _hydrate_hits(db, scores, [cid for cid, _ in ranked])
+    top_score = hits[0].score if hits else 1.0
+    for h in hits:
+        h.score = h.score / top_score if top_score > 0 else 0.0
+    return hits
 
 
 def consolidate(hits: list[Hit], threshold: int | None = None) -> tuple[list[str], dict[str, int]]:
