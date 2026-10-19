@@ -144,6 +144,7 @@ CHILD_OVERLAP=50
 DEFAULT_TOP_K=5
 PARENT_CONSOLIDATION_THRESHOLD=3
 CORS_ORIGINS=http://localhost:3000
+# RERANK_MODEL=BAAI/bge-reranker-v2-m3   # optional reranker, off by default (see section 7)
 
 # Email (account verification + password reset)
 EMAIL_BACKEND=console          # "console" logs links to the terminal; "resend" delivers for real
@@ -181,3 +182,58 @@ pnpm`) or via Corepack (`corepack enable pnpm`).
 - **PDF highlights are offset** — try zooming to 100% and re-clicking
   the snippet; `react-pdf` reports dimensions that include the current
   scale, which the viewer accounts for.
+
+---
+
+## 7. Reranker（交叉编码器重排，可选，默认关闭）
+
+在混合检索（向量 + BM25，RRF 融合）之后，可选用交叉编码器把前 50 个候选重新打分排序，再取前 k 个。代码在 `backend/app/services/rerank.py`。
+
+### 开启 / 关闭
+
+1. 打开 `backend/.env`，找到这一行，删掉开头的 `# `：
+   ```
+   # RERANK_MODEL=BAAI/bge-reranker-v2-m3
+   ```
+2. 重启后端：`uvicorn app.main:app --reload --port 8000`（在 `backend/` 下，venv 已激活）。
+3. 关闭：把 `# ` 加回去，再重启。
+
+- 不需要重新上传或重新处理文档：重排只在查询时运行。
+- 第一次查询会下载模型（约 2.2 GB，存到 `~/.cache/huggingface`），加载约 10–40 秒；之后每次查询约 5.6 秒（M1 Pro，MPS）。
+- 在 GPU/MPS 上用 fp16 加载，占约 7.7 GB 内存。fp32 会占 14 GB，在 16 GB 的 Mac 上会用到交换内存，变得很慢。
+
+### 设置项（`backend/.env`）
+
+| 变量                | 默认       | 作用                                                 |
+| ------------------- | ---------- | ---------------------------------------------------- |
+| `RERANK_MODEL`      | 空（关闭） | Hugging Face 模型 id，推荐 `BAAI/bge-reranker-v2-m3` |
+| `RERANK_CANDIDATES` | `50`       | 重排的候选数；调小更快，但可能漏掉排名靠后的正确段落 |
+
+不要用 `BAAI/bge-reranker-base`：在 AMD 10-K 上，k ≤ 10 时它比不用重排还差。
+
+### 效果（AMD 2022 10-K，2026-10-18）
+
+| 指标                         |                不重排 |            v2-m3 重排 |
+| ---------------------------- | --------------------: | --------------------: |
+| Pass@1 / @5 / @10            | 51.4% / 78.4% / 81.1% | 62.2% / 81.1% / 91.9% |
+| MRR                          |                 0.605 |                 0.707 |
+| 回答失败率（grounding eval） |                 12.9% |                  6.8% |
+| 检索延迟 p50（M1 Pro）       |                0.3 秒 |                5.9 秒 |
+
+### 重新测量（在 `backend/` 下）
+
+```bash
+# 检索：不重排 vs 重排，输出 Pass@k 和延迟表，记录到 MLflow 实验 eval-amd_2022_10k（不到 $0.10，约 7 分钟）
+python scripts/eval_retrieval.py --pdf ../AMD_2022_10K.pdf \
+    --labels scripts/eval_labels/amd_2022_10k.json --top-k 20 --rerank BAAI/bge-reranker-v2-m3
+
+# 端到端回答质量：开启重排后跑 grounding eval（约 $2.50，约 30 分钟）
+RERANK_MODEL=BAAI/bge-reranker-v2-m3 python scripts/eval_grounding.py --pdf ../AMD_2022_10K.pdf \
+    --labels scripts/eval_labels/amd_2022_10k.json --reps 3 --experiment grounding-amd-10k
+```
+
+查看结果：`mlflow ui --backend-store-uri sqlite:///../data/mlflow/mlflow.db --port 5055`。
+
+### 以后部署到 Kubernetes
+
+`rerank.score()` 的输入输出与 Hugging Face Text Embeddings Inference（TEI）的 `POST /rerank` 相同。部署时用 TEI 镜像加 `--model-id BAAI/bge-reranker-v2-m3` 起一个 GPU pod，再把 `score()` 的函数体换成对它的 HTTP 调用（约 8 行）即可。在 GPU 上预计约 50–100 毫秒/查询（估算，未实测）。
