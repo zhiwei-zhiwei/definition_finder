@@ -29,7 +29,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
-    "ruff>=0.6.0",
+    "ruff==0.15.11",  # pinned: new ruff releases enable more default rules (0.17 flagged 75 issues)
     "mlflow>=3.0",  # eval run tracking (scripts/eval_retrieval.py)
 ]
 
