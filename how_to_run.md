@@ -237,3 +237,52 @@ RERANK_MODEL=BAAI/bge-reranker-v2-m3 python scripts/eval_grounding.py --pdf ../A
 ### 以后部署到 Kubernetes
 
 `rerank.score()` 的输入输出与 Hugging Face Text Embeddings Inference（TEI）的 `POST /rerank` 相同。部署时用 TEI 镜像加 `--model-id BAAI/bge-reranker-v2-m3` 起一个 GPU pod，再把 `score()` 的函数体换成对它的 HTTP 调用（约 8 行）即可。在 GPU 上预计约 50–100 毫秒/查询（估算，未实测）。
+
+---
+
+## 8. Docker（一条命令启动前后端）
+
+```bash
+# 仓库根目录；先停掉本地的 pnpm dev / uvicorn（会抢 3000 / 8000 端口）
+docker compose up --build        # 打开 http://localhost:3000
+docker compose down              # 停止（数据还在 data/ 里）
+```
+
+- 读取 `backend/.env` 作为运行时环境变量。密钥不会打进镜像，`.dockerignore` 排除了 `.env`。
+- `./data` 挂载到容器里的 `/app/data`，和本地开发共用同一个数据库和同一批上传文件。
+- Docling 模型（约 500 MB）缓存在 Docker 卷 `model-cache` 里，只在第一次处理文档时下载。
+- 后端镜像约 1.65 GB（使用 CPU 版 torch），前端镜像约 156 MB（Next standalone）。
+- 前端的 API 地址在构建时写进 JS。要改地址，修改 `docker-compose.yml` 里的 `NEXT_PUBLIC_API_BASE`，然后重新 `--build`。
+
+## 9. CI 与检索门禁
+
+每次 push 都会触发 `.github/workflows/ci.yml`：
+
+1. `ruff check app scripts tests`。ruff 版本锁在 `pyproject.toml` 里，因为新版会默认开启更多规则。
+2. `pytest`
+3. **检索门禁** `python scripts/eval_smoke.py`：在冻结的 AMD 10-K 数据（`tests/fixtures/retrieval_amd.npz`）上回放真实的 `hybrid_search` 和 `consolidate`。不调用 API，约 3 秒。任何一个指标低于 `GATES` 就 exit 1。
+4. 前 3 步都通过后，构建后端和前端两个镜像，只构建不推送。
+
+### 本地先跑一遍（在 `backend/` 下）
+
+```bash
+ruff check app scripts tests && pytest -q && python scripts/eval_smoke.py
+```
+
+### 门禁失败时
+
+- 输出会列出每条丢失的查询（排名，以及答案是否在上下文里）。先确认这些是不是你的改动造成的。
+- 如果确实是改进（指标变好），门禁不会失败。但要把 `eval_smoke.py` 里的 `GATES` 调高，阈值设为新值减 0.027（一条查询），不然以后指标回落时不会报警。
+
+### 需要重新冻结 fixture 的情况
+
+改了切块（`CHILD_TOKENS` / `PARENT_TOKENS`、chunker）、embedding 模型或标签文件时，门禁看不到这些变化，需要重新冻结：
+
+```bash
+# 约 3 分钟，不到 $0.05；之后按新数字重设 GATES，并提交新的 .npz
+python scripts/freeze_retrieval_fixture.py --pdf ../AMD_2022_10K.pdf \
+    --labels scripts/eval_labels/amd_2022_10k.json
+python scripts/eval_smoke.py
+```
+
+门禁只覆盖检索。回答质量仍然要靠 `eval_grounding.py`，它要花钱，所以只手动运行。

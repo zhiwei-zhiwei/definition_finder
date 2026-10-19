@@ -40,6 +40,8 @@ pnpm build && pnpm start   # prod build
 pnpm lint             # next lint / eslint
 ```
 
+Docker: `docker compose up --build` from the repo root (backend `.env` injected at runtime, `./data` bind-mounted to `/app/data`, CPU-only torch). CI (`.github/workflows/ci.yml`, every push): `ruff check app scripts tests` (ruff is pinned — newer releases enable more default rules), `pytest`, the offline retrieval gate `python scripts/eval_smoke.py`, then a build-only of both images. The gate replays `hybrid_search` + `consolidate` on `tests/fixtures/retrieval_amd.npz` (frozen AMD 10-K chunks + float16 vectors, no API calls) and exits 1 below the `GATES` floors (frozen values minus one query). Re-freeze with `scripts/freeze_retrieval_fixture.py` and re-set `GATES` when chunking, the embedding model or the labels change; raise `GATES` after a real improvement.
+
 Wipe local state: `bash backend/scripts/wipe_data.sh` from the repo root. The script first writes a timestamped backup at `data.bak.<ts>` (embeddings cost real OpenAI dollars to regenerate) and then removes `app.db`, `uploads/`, `cache/`. Restore with `mv data.bak.<ts> data` after `rm -rf data`.
 
 ## Architecture
