@@ -60,10 +60,16 @@ def _hydrate_hits(db: Session, scores: dict[str, float], order: list[str]) -> li
     return [by_id[cid] for cid in order if cid in by_id]
 
 
-def _rrf_merge(rankings: list[list[str]], k: int = 60) -> dict[str, float]:
+def _rrf_merge(rankings: list[list[str]], k: int = 20) -> dict[str, float]:
     """Reciprocal Rank Fusion: combine multiple rankers without score normalization.
 
     `score(d) = sum over rankers of 1 / (k + rank(d))`. Higher is better.
+
+    k=20, not the usual 60: at 60 rank 1 and rank 10 score almost the same, so mid-rank
+    BM25 noise in both arms outranked one arm's clear top hit. On the AMD 10-K (two
+    Docling versions) and the lease, k=20 was no worse than 60 on any metric and lifted
+    Pass@20 on all three (53 queries: 46 -> 52); k=10 and below scored a bit higher at
+    Pass@1/5 but dropped a gold passage from the summarizer context.
     """
     out: dict[str, float] = {}
     for ranking in rankings:

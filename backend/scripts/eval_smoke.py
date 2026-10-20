@@ -34,10 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_retrieval import _gold_list, _gold_ranks, _metrics, _norm  # noqa: E402
 from freeze_retrieval_fixture import FIXTURE  # noqa: E402
 
-# Floors = the fixture's values (frozen 2026-10-19: P@1 .514, P@5 .784, P@20 .838, MRR .605, context .865)
+# Floors = the fixture's values (RRF k=20, 2026-10-19: P@1 .541, P@5 .811, P@20 .946, MRR .636, context .865)
 # minus one query (1/37 = .027): one rank shift from float rounding on another CPU passes, two lost queries fail.
 # Raise them after a real improvement; re-derive them after a re-freeze.
-GATES = {"pass_at_1": 0.48, "pass_at_5": 0.75, "pass_at_20": 0.81, "mrr": 0.57, "context_gold_rate": 0.83}
+GATES = {"pass_at_1": 0.51, "pass_at_5": 0.78, "pass_at_20": 0.91, "mrr": 0.60, "context_gold_rate": 0.83}
 
 
 def _load(db: Session, path: Path) -> tuple[str, list[dict], np.ndarray]:
