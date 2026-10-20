@@ -23,6 +23,7 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "PyJWT>=2.9.0",
     "bcrypt>=4.2,<5",
+    "langgraph>=1.2",
     # Direct (docling pulls them in anyway) so [tool.uv.sources] can route Linux to the CPU wheels
     "torch>=2.2",
     "torchvision>=0.17",
