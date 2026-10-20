@@ -1,19 +1,19 @@
 FROM python:3.11-slim
 
 # uv: same installer as local dev, ~10x faster than pip
-COPY --from=ghcr.io/astral-sh/uv:0.8.13 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.17 /uv /usr/local/bin/uv
 # opencv (pulled in by docling's OCR) needs these shared libs at import time
 RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-ENV UV_SYSTEM_PYTHON=1 UV_NO_CACHE=1 PYTHONUNBUFFERED=1
+# Use the image's Python (never download one); the venv's bin goes first on PATH
+ENV UV_NO_CACHE=1 UV_PYTHON_DOWNLOADS=never PYTHONUNBUFFERED=1 PATH="/app/backend/.venv/bin:$PATH"
 WORKDIR /app/backend
 
-# CPU-only torch first: PyPI's Linux torch wheel ships ~3 GB of CUDA libs this image never uses
-RUN uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-# Dependencies only (not the app), so this layer is rebuilt only when pyproject.toml changes
-COPY pyproject.toml .
-RUN uv pip install -r pyproject.toml
+# Exact versions from uv.lock (CPU-only torch on Linux, see pyproject.toml); --locked fails the
+# build if the lock is stale. Dependencies only, so this layer is rebuilt only when they change.
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-install-project
 
 COPY app ./app
 EXPOSE 8000

@@ -44,8 +44,8 @@ cd backend
 uv venv --python 3.11
 source .venv/bin/activate
 
-# Install deps (pinned to this venv only)
-uv pip install -e ".[dev]"
+# Install the exact versions in uv.lock (same as Docker and CI)
+uv sync --extra dev
 
 # Configure secrets / paths
 cp .env.example .env
@@ -125,7 +125,9 @@ chunking_parents → chunking_children → embedding → ready`).
 | Build frontend for prod | `cd frontend && pnpm build && pnpm start`                                             |
 | Wipe all local data     | `rm -rf data/chroma data/uploads data/cache data/app.db`                              |
 | Delete a specific doc   | use the drawer's trash icon, or `curl -X DELETE http://localhost:8000/documents/<id>` |
-| Update backend deps     | `cd backend && uv pip install -e ".[dev]"`                                            |
+| Sync backend deps       | `cd backend && uv sync --extra dev` (after a pull that changed `uv.lock`)             |
+| Add a backend dep       | edit `pyproject.toml`, then `uv lock && uv sync --extra dev`; commit both files       |
+| Upgrade backend deps    | `uv lock --upgrade` (all) or `uv lock --upgrade-package docling`; run tests + gate     |
 | Update frontend deps    | `cd frontend && pnpm install`                                                         |
 
 ---

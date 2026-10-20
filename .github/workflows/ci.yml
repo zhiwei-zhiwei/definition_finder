@@ -19,8 +19,6 @@ jobs:
     defaults:
       run:
         working-directory: backend
-    env:
-      UV_SYSTEM_PYTHON: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -28,11 +26,12 @@ jobs:
           python-version: "3.11"
       - uses: astral-sh/setup-uv@v6
         with:
+          version: "0.9.17"  # same uv as local and backend/Dockerfile
           enable-cache: true
-          cache-dependency-glob: backend/pyproject.toml
-      # CPU torch first (same reason as backend/Dockerfile): skips ~3 GB of CUDA wheels
-      - run: uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-      - run: uv pip install -e ".[dev]"
+          cache-dependency-glob: backend/uv.lock
+      # Exact versions from uv.lock; --locked fails if pyproject.toml changed without re-locking
+      - run: uv sync --locked --extra dev
+      - run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: ruff
         run: ruff check app scripts tests
       - name: pytest

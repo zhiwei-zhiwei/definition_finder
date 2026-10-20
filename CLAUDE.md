@@ -24,7 +24,8 @@ Backend (run from `backend/`, with `.venv` activated):
 
 ```bash
 uv venv --python 3.11 && source .venv/bin/activate    # one-time
-uv pip install -e ".[dev]"                            # install / refresh deps
+uv sync --extra dev                                   # install the exact versions in uv.lock
+uv lock                                               # after editing pyproject.toml deps (commit uv.lock too)
 uvicorn app.main:app --reload --port 8000             # dev server (http://localhost:8000, /docs for Swagger)
 pytest                                                # tests (the tests/ dir is currently empty)
 pytest tests/path/to/test_file.py::test_name          # single test

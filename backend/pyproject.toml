@@ -23,6 +23,9 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "PyJWT>=2.9.0",
     "bcrypt>=4.2,<5",
+    # Direct (docling pulls them in anyway) so [tool.uv.sources] can route Linux to the CPU wheels
+    "torch>=2.2",
+    "torchvision>=0.17",
 ]
 
 [project.optional-dependencies]
@@ -39,3 +42,14 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+# uv.lock pins every package (207, transitive included) for local, Docker and CI alike.
+# Linux (Docker, CI) gets CPU-only torch: PyPI's Linux wheel ships ~3 GB of CUDA libs; macOS keeps PyPI.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+torchvision = [{ index = "pytorch-cpu", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
