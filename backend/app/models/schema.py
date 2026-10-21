@@ -118,6 +118,7 @@ class Query(Base):
     key_takeaway: Mapped[str | None] = mapped_column(Text, nullable=True)
     # query_graph's verification result (status / issues / needs_review); NULL on rows cached before it
     verification_json: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # "pending" while the run waits in query_graph's review node, "accepted" after; NULL if never flagged
+    # "pending" while the run waits in query_graph's review node, then "accepted" or "rejected";
+    # NULL if never flagged
     review_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)

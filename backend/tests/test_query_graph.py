@@ -100,6 +100,25 @@ def test_flagged_answer_pauses_until_accepted(client, doc_id, stubs):
     assert _events(r.text) == ["error"] and "nothing to review" in r.text
 
 
+def test_rejected_answer_is_kept_and_labelled(client, stubs, make_user, bearer):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    _, jwt = make_user("reject@example.com", "rejectuser")
+    uid = client.get("/auth/me", headers=bearer(jwt)).json()["user_id"]
+    did = uuid.uuid4().hex
+    with SessionLocal() as db:
+        db.add(Document(id=did, filename="x.pdf", mime="application/pdf", size_bytes=1, status="ready", user_id=uid))
+        db.commit()
+    before = _checkpoints()
+    r = client.post("/query", json={"doc_id": did, "query": "how long is the term?"}, headers=bearer(jwt))
+    qid = _data(r.text, "review")["query_id"]
+    r = client.post("/query/resume", json={"query_id": qid, "action": "reject"}, headers=bearer(jwt))
+    assert _events(r.text) == ["done"]
+    assert _checkpoints() == before
+    cached = client.get(f"/queries/{qid}", headers=bearer(jwt)).json()
+    assert cached["review_status"] == "rejected" and cached["review"] is None
+    assert cached["summary_text"] == "It is 5 years."  # kept, not deleted
+
+
 def test_retry_reruns_with_more_passages_and_updates_the_cache(client, stubs, make_user, bearer):
     stubs.setattr(prepare, "has_chunks", lambda _id: True)
     _, jwt = make_user("retry@example.com", "retryuser")
@@ -193,4 +212,5 @@ def test_signed_in_query_caches_its_verification(client, stubs, make_user, beare
     client.post("/query/resume", json={"query_id": row["id"], "action": "accept"}, headers=bearer(jwt))
     [row] = client.get(f"/queries?doc_id={did}", headers=bearer(jwt)).json()
     assert row["review_status"] == "accepted"
-    assert client.get(f"/queries/{row['id']}", headers=bearer(jwt)).json()["review"] is None
+    cached = client.get(f"/queries/{row['id']}", headers=bearer(jwt)).json()
+    assert cached["review"] is None and cached["review_status"] == "accepted"

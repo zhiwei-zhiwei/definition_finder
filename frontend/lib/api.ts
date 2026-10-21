@@ -1,4 +1,4 @@
-import type { Verification } from "@/lib/types";
+import type { Review, ReviewAction, ReviewVerdict, Verification } from "@/lib/types";
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
@@ -66,6 +66,7 @@ export type CachedQueryRow = {
   query_text: string;
   key_takeaway: string | null;
   top_k: number;
+  review_status: "pending" | ReviewVerdict | null;
   created_at: string | null;
 };
 
@@ -74,6 +75,7 @@ export type CachedQueryFull = CachedQueryRow & {
   snippets: Snippet[];
   summary_text: string;
   verification: Verification | null; // null on queries cached before verification existed
+  review: Review | null; // set while the run still waits for review
 };
 
 export async function listQueries(docId: string): Promise<CachedQueryRow[]> {
@@ -100,6 +102,7 @@ export type SseHandlers = {
   onSnippets?: (items: Snippet[]) => void;
   onToken?: (tok: string) => void;
   onVerification?: (v: Verification) => void;
+  onReview?: (r: Review) => void;
   onDone?: (payload: any) => void;
   onError?: (msg: string) => void;
 };
@@ -136,6 +139,9 @@ export async function consumeSSE(
         break;
       case "verification":
         handlers.onVerification?.(data);
+        break;
+      case "review":
+        handlers.onReview?.(data);
         break;
       case "done":
         handlers.onDone?.(data);
@@ -194,6 +200,20 @@ export async function runQuery(
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ doc_id: docId, query, top_k: topK }),
+  });
+  return consumeSSE(r, handlers);
+}
+
+/** Accept or reject a paused answer, or rerun it with more passages; streams like runQuery. */
+export async function resumeQuery(
+  queryId: string,
+  action: ReviewAction,
+  handlers: SseHandlers,
+) {
+  const r = await fetch(`${API_BASE}/query/resume`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ query_id: queryId, action }),
   });
   return consumeSSE(r, handlers);
 }

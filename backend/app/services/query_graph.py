@@ -3,10 +3,10 @@
     START -(not prepared)-> prepare -> retrieve -> consolidate -(evidence)-> summarize -> verify -> finalize -(ok)-> END
           -(prepared)-----------------^   ^              -(none)---> insufficient ----------^    |
                                           +------------ retry (top_k x2) -- review <-(flagged)--+
-                                                                              +-- accept --> finalize
+                                                                              +-- accept / reject --> finalize
 
 A flagged answer pauses the run in `review` (LangGraph `interrupt()`) until a human
-accepts it or asks for a retry with more passages (POST /query/resume).
+accepts it, rejects it, or asks for a retry with more passages (POST /query/resume).
 
 Every SSE event the route streams (except done/error) is written by a node via
 `writer`, and the route relays them with `astream(stream_mode="custom")`. Sync nodes
@@ -74,7 +74,7 @@ class QueryState(QueryInput, total=False):
     snippets: list[dict]
     answer: str
     verification: dict  # verify.check(): status ok | warning | insufficient_evidence, issues, needs_review
-    review: str  # "accepted" once a human has accepted a flagged answer
+    review: str  # "accepted" | "rejected": a human's verdict on a flagged answer
 
 
 def _route_start(state: QueryState) -> str:
@@ -172,7 +172,7 @@ def _route_review(state: QueryState) -> str:
     can't raise the doc's best cosine, so there is nothing to retry."""
     v = state["verification"]
     gated = any(i["kind"] == "low_evidence" for i in v["issues"])
-    return "review" if v["needs_review"] and not gated and state.get("review") != "accepted" else END
+    return "review" if v["needs_review"] and not gated and not state.get("review") else END
 
 
 def review(state: QueryState) -> Command:
@@ -182,12 +182,13 @@ def review(state: QueryState) -> Command:
     decision = interrupt({"can_retry": can_retry, "top_k": state["top_k"]})
     if decision == "retry" and can_retry:
         return Command(goto="retrieve", update={"top_k": min(state["top_k"] * 2, MAX_TOP_K)})
-    return Command(goto="finalize", update={"review": "accepted"})
+    # A rejected answer stays cached: the verdict is a human label for scoring checks later.
+    return Command(goto="finalize", update={"review": "rejected" if decision == "reject" else "accepted"})
 
 
 def finalize(state: QueryState) -> dict:
     """Cache the result for the signed-in user's Queries tab; a failed cache never fails the query.
-    Runs again after a retry or an accept, overwriting the same row."""
+    Runs again after a retry or a verdict, overwriting the same row."""
     if state["user_id"] is not None:
         try:
             _persist_query(state)

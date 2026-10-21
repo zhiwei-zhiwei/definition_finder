@@ -1,12 +1,15 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
-import { Verification } from "@/lib/types";
+import { Review, ReviewAction, ReviewVerdict, Verification } from "@/lib/types";
 
 type Props = {
   text: string;
   streaming: boolean;
   verification: Verification | null;
+  review: Review | null;
+  verdict: ReviewVerdict | null;
+  onResume: (action: ReviewAction) => void;
 };
 
 const BANNER: Record<Verification["status"], { icon: string; title: string; cls: string }> = {
@@ -27,8 +30,22 @@ const BANNER: Record<Verification["status"], { icon: string; title: string; cls:
   },
 };
 
-// Shown once the answer has streamed: verification runs after the last token.
-function VerificationBanner({ v }: { v: Verification }) {
+const ACTION = "px-2 py-1 rounded bg-surface-container-lowest/70 font-semibold hover:bg-surface-container-lowest";
+
+// Shown once the answer has streamed: verification runs after the last token. A flagged
+// answer's run waits on the server until the reader accepts or rejects it, or retries with
+// more passages.
+function VerificationBanner({
+  v,
+  review,
+  verdict,
+  onResume,
+}: {
+  v: Verification;
+  review: Review | null;
+  verdict: ReviewVerdict | null;
+  onResume: Props["onResume"];
+}) {
   const b = BANNER[v.status];
   return (
     <div className={`mb-4 p-3 rounded-lg text-xs ${b.cls}`} role="status">
@@ -42,6 +59,24 @@ function VerificationBanner({ v }: { v: Verification }) {
             <li key={i.kind}>{i.detail}</li>
           ))}
         </ul>
+      )}
+      {review && (
+        <div className="mt-2 ml-6 flex flex-wrap gap-2">
+          <button className={ACTION} onClick={() => onResume("accept")}>
+            Accept answer
+          </button>
+          <button className={ACTION} onClick={() => onResume("reject")}>
+            Reject
+          </button>
+          {review.can_retry && (
+            <button className={ACTION} onClick={() => onResume("retry")}>
+              Retry with more passages
+            </button>
+          )}
+        </div>
+      )}
+      {verdict && (
+        <div className="mt-1 ml-6">{verdict === "accepted" ? "Accepted" : "Rejected"} after review.</div>
       )}
     </div>
   );
@@ -57,7 +92,7 @@ function splitKeyTakeaway(md: string): { body: string; takeaway: string | null }
   };
 }
 
-export function SummaryCard({ text, streaming, verification }: Props) {
+export function SummaryCard({ text, streaming, verification, review, verdict, onResume }: Props) {
   const { body, takeaway } = splitKeyTakeaway(text);
   const empty = text.trim().length === 0;
   return (
@@ -69,7 +104,9 @@ export function SummaryCard({ text, streaming, verification }: Props) {
         <h3 className="font-headline font-semibold text-on-surface text-lg">Executive Summary</h3>
         {streaming && <span className="text-xs text-primary animate-pulse ml-auto">streaming…</span>}
       </div>
-      {verification && !streaming && <VerificationBanner v={verification} />}
+      {verification && !streaming && (
+        <VerificationBanner v={verification} review={review} verdict={verdict} onResume={onResume} />
+      )}
       <div className="prose prose-sm prose-slate font-body text-on-surface flex-1 max-w-none">
         {empty ? (
           <p className="text-on-surface-variant">

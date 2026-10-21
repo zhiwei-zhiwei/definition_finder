@@ -60,6 +60,7 @@ def get_query(
         "summary_text": r.summary_text,
         "key_takeaway": r.key_takeaway,
         "verification": json.loads(r.verification_json) if r.verification_json else None,
+        "review_status": r.review_status,
         # Same shape as the `review` SSE event, so the UI can resume a run paused in an earlier visit
         "review": {"query_id": r.id, "can_retry": r.top_k < MAX_TOP_K, "top_k": r.top_k}
         if r.review_status == "pending" else None,

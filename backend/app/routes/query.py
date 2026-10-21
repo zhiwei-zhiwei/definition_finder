@@ -35,7 +35,7 @@ async def query_stream(
 
 class ResumeRequest(BaseModel):
     query_id: str
-    action: Literal["accept", "retry"]
+    action: Literal["accept", "reject", "retry"]
 
 
 @router.post("/query/resume")

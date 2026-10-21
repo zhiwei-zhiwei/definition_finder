@@ -12,13 +12,15 @@ import { DocumentViewer } from "@/components/viewer/DocumentViewer";
 import { useAuth } from "@/components/AuthContext";
 import {
   DocumentRecord,
+  SseHandlers,
   Snippet,
   getDocument,
   getQuery,
+  resumeQuery,
   runQuery,
 } from "@/lib/api";
 import { clearAnonDocId, setAnonDocId } from "@/lib/auth";
-import { StageEvent, Verification } from "@/lib/types";
+import { Review, ReviewAction, ReviewVerdict, StageEvent, Verification } from "@/lib/types";
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -35,22 +37,29 @@ export default function HomePage() {
   const [stagePayload, setStagePayload] = useState<StageEvent | null>(null);
   const [summary, setSummary] = useState("");
   const [verification, setVerification] = useState<Verification | null>(null);
+  // Set while the answer's run is paused for review; cleared once judged or retried.
+  const [review, setReview] = useState<Review | null>(null);
+  const [verdict, setVerdict] = useState<ReviewVerdict | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queriesRefreshKey, setQueriesRefreshKey] = useState(0);
 
-  async function onAnalyze(query: string, topK: number) {
-    if (!doc) return;
+  // Clear the panels before a run that streams a fresh answer.
+  function startRun() {
     setStreaming(true);
     setStage("embedding_query");
     setStagePayload(null);
     setSnippets([]);
     setSummary("");
     setVerification(null);
+    setReview(null);
+    setVerdict(null);
     setQueryError(null);
-    let prepared = false;
+  }
 
-    await runQuery(doc.id, query, topK, {
+  function streamHandlers(): SseHandlers {
+    let prepared = false;
+    return {
       onStage: (payload) => {
         if (payload.stage === "extracting") prepared = true;
         setStage(payload.stage);
@@ -59,6 +68,7 @@ export default function HomePage() {
       onSnippets: (items) => setSnippets(items),
       onToken: (tok) => setSummary((prev) => prev + tok),
       onVerification: setVerification,
+      onReview: setReview,
       onDone: () => {
         if (prepared) setDocVersion((v) => v + 1);
         setStreaming(false);
@@ -69,6 +79,32 @@ export default function HomePage() {
         setQueryError(msg);
         setStreaming(false);
       },
+    };
+  }
+
+  async function onAnalyze(query: string, topK: number) {
+    if (!doc) return;
+    startRun();
+    await runQuery(doc.id, query, topK, streamHandlers());
+  }
+
+  async function onResume(action: ReviewAction) {
+    if (!review) return;
+    const id = review.query_id;
+    if (action === "retry") {
+      startRun();
+      await resumeQuery(id, "retry", streamHandlers());
+      return;
+    }
+    // A verdict streams nothing back; keep the answer on screen.
+    setReview(null);
+    setQueryError(null);
+    await resumeQuery(id, action, {
+      onDone: () => {
+        setVerdict(action === "accept" ? "accepted" : "rejected");
+        setQueriesRefreshKey((k) => k + 1);
+      },
+      onError: setQueryError,
     });
   }
 
@@ -87,6 +123,8 @@ export default function HomePage() {
       setSnippets(cached.snippets);
       setSummary(cached.summary_text);
       setVerification(cached.verification);
+      setReview(cached.review);
+      setVerdict(cached.review_status === "pending" ? null : cached.review_status);
       setStage("done");
       setStagePayload(null);
       setStreaming(false);
@@ -101,6 +139,8 @@ export default function HomePage() {
     setSnippets([]);
     setSummary("");
     setVerification(null);
+    setReview(null);
+    setVerdict(null);
     setStage(null);
     setStagePayload(null);
     setPageTarget(null);
@@ -128,6 +168,8 @@ export default function HomePage() {
           setSnippets([]);
           setSummary("");
           setVerification(null);
+          setReview(null);
+          setVerdict(null);
           setStage(null);
           setPageTarget(null);
         }}
@@ -168,7 +210,14 @@ export default function HomePage() {
               {queryError}
             </div>
           )}
-          <SummaryCard text={summary} streaming={streaming} verification={verification} />
+          <SummaryCard
+            text={summary}
+            streaming={streaming}
+            verification={verification}
+            review={review}
+            verdict={verdict}
+            onResume={onResume}
+          />
         </section>
       </main>
     </>

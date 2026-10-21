@@ -279,6 +279,16 @@ export function RecentFilesDrawer({
                     ? q.query_text.slice(0, 80) + "…"
                     : q.query_text}
                 </div>
+                {q.review_status === "pending" && (
+                  <span className="self-start text-[10px] font-semibold px-1.5 py-0.5 rounded bg-tertiary-fixed/60 text-on-tertiary-fixed-variant">
+                    Needs review
+                  </span>
+                )}
+                {q.review_status === "rejected" && (
+                  <span className="self-start text-[10px] font-semibold px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant">
+                    Rejected
+                  </span>
+                )}
                 {q.key_takeaway && (
                   <div className="text-xs text-on-surface-variant line-clamp-2">
                     {q.key_takeaway}
