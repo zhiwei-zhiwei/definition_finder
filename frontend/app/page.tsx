@@ -18,7 +18,7 @@ import {
   runQuery,
 } from "@/lib/api";
 import { clearAnonDocId, setAnonDocId } from "@/lib/auth";
-import { StageEvent } from "@/lib/types";
+import { StageEvent, Verification } from "@/lib/types";
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -31,6 +31,7 @@ export default function HomePage() {
   const [stage, setStage] = useState<string | null>(null);
   const [stagePayload, setStagePayload] = useState<StageEvent | null>(null);
   const [summary, setSummary] = useState("");
+  const [verification, setVerification] = useState<Verification | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
   const [queriesRefreshKey, setQueriesRefreshKey] = useState(0);
@@ -42,6 +43,7 @@ export default function HomePage() {
     setStagePayload(null);
     setSnippets([]);
     setSummary("");
+    setVerification(null);
     setQueryError(null);
 
     await runQuery(doc.id, query, topK, {
@@ -51,6 +53,7 @@ export default function HomePage() {
       },
       onSnippets: (items) => setSnippets(items),
       onToken: (tok) => setSummary((prev) => prev + tok),
+      onVerification: setVerification,
       onDone: () => {
         setStreaming(false);
         setStage("done");
@@ -77,6 +80,7 @@ export default function HomePage() {
       }
       setSnippets(cached.snippets);
       setSummary(cached.summary_text);
+      setVerification(cached.verification);
       setStage("done");
       setStagePayload(null);
       setStreaming(false);
@@ -90,6 +94,7 @@ export default function HomePage() {
     setDoc(null);
     setSnippets([]);
     setSummary("");
+    setVerification(null);
     setStage(null);
     setStagePayload(null);
     setPageTarget(null);
@@ -116,6 +121,7 @@ export default function HomePage() {
           setDoc(d);
           setSnippets([]);
           setSummary("");
+          setVerification(null);
           setStage(null);
           setPageTarget(null);
         }}
@@ -156,7 +162,7 @@ export default function HomePage() {
               {queryError}
             </div>
           )}
-          <SummaryCard text={summary} streaming={streaming} />
+          <SummaryCard text={summary} streaming={streaming} verification={verification} />
         </section>
       </main>
     </>

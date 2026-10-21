@@ -181,6 +181,7 @@ def _persist_query(state: QueryState) -> None:
             snippets_json=json.dumps(state["snippets"]),
             summary_text=state["answer"],
             key_takeaway=_extract_key_takeaway(state["answer"]),
+            verification_json=json.dumps(state["verification"]),
         ))
         db.commit()
 

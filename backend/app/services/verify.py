@@ -11,6 +11,8 @@ from decimal import ROUND_HALF_UP, Decimal
 # ponytail: "(page 47, 2022)" also collects 2022; tighten if fake_page_rate flags it
 PAGE_RE = re.compile(r"\bp(?:ages?|p?\.)\s*(\d+(?:\s*(?:,\s*(?:and|&)?|–|-|and|&)\s*\d+)*)", re.IGNORECASE)
 _LIST_MARK_RE = re.compile(r"^\s*\d+[.)]\s", re.MULTILINE)  # "2. Expanding data center…"
+# "(Excerpt 1)", "Excerpts 1, 2, and 3": how answers cite non-PDF docs, which have no pages
+_EXCERPT_REF_RE = re.compile(r"\bexcerpts?\s+\d+(?:\s*(?:,\s*(?:and|&)?|and|&)\s*\d+)*", re.IGNORECASE)
 
 # "25,000", "$23.6 billion", "16%", "$5B"; not the 300 in "MI300" or the 1 in "Q1"
 _NUM_RE = re.compile(r"(?<![\w.])(\d+(?:,\d{3})*(?:\.\d+)?)(?!\d)"
@@ -40,10 +42,10 @@ def fake_pages(cited: list[int], ex: list[dict]) -> list[int]:
 
 
 def numbers(text: str) -> list[tuple[Decimal, Decimal, bool, str]]:
-    """(value, precision, is_percent, as written) per number; page citations and list markers
-    are not numbers here."""
+    """(value, precision, is_percent, as written) per number; page/excerpt citations and list
+    markers are not numbers here."""
     out = []
-    for m in _NUM_RE.finditer(_LIST_MARK_RE.sub(" ", PAGE_RE.sub(" ", text))):
+    for m in _NUM_RE.finditer(_LIST_MARK_RE.sub(" ", _EXCERPT_REF_RE.sub(" ", PAGE_RE.sub(" ", text)))):
         unit = (m[2] or m[3] or "").lower()
         d, k = Decimal(m[1].replace(",", "")), _SCALE.get(unit, 0)
         out.append((d.scaleb(k), Decimal(1).scaleb(d.as_tuple().exponent + k), unit in ("%", "percent"), m[0]))

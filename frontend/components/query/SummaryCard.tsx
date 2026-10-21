@@ -1,11 +1,51 @@
 "use client";
 
 import ReactMarkdown from "react-markdown";
+import { Verification } from "@/lib/types";
 
 type Props = {
   text: string;
   streaming: boolean;
+  verification: Verification | null;
 };
+
+const BANNER: Record<Verification["status"], { icon: string; title: string; cls: string }> = {
+  ok: {
+    icon: "verified",
+    title: "Cited pages and numbers match the excerpts",
+    cls: "bg-primary/5 text-primary",
+  },
+  warning: {
+    icon: "warning",
+    title: "Needs review",
+    cls: "bg-tertiary-fixed/60 text-on-tertiary-fixed-variant",
+  },
+  insufficient_evidence: {
+    icon: "help",
+    title: "Not enough evidence in this document. Review before relying on it",
+    cls: "bg-surface-container-high text-on-surface-variant",
+  },
+};
+
+// Shown once the answer has streamed: verification runs after the last token.
+function VerificationBanner({ v }: { v: Verification }) {
+  const b = BANNER[v.status];
+  return (
+    <div className={`mb-4 p-3 rounded-lg text-xs ${b.cls}`} role="status">
+      <div className="flex items-center gap-2 font-semibold">
+        <span className="material-symbols-outlined text-[16px]">{b.icon}</span>
+        {b.title}
+      </div>
+      {v.issues.length > 0 && (
+        <ul className="mt-1 ml-6 list-disc">
+          {v.issues.map((i) => (
+            <li key={i.kind}>{i.detail}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function splitKeyTakeaway(md: string): { body: string; takeaway: string | null } {
   const marker = "**Key Takeaway:**";
@@ -17,7 +57,7 @@ function splitKeyTakeaway(md: string): { body: string; takeaway: string | null }
   };
 }
 
-export function SummaryCard({ text, streaming }: Props) {
+export function SummaryCard({ text, streaming, verification }: Props) {
   const { body, takeaway } = splitKeyTakeaway(text);
   const empty = text.trim().length === 0;
   return (
@@ -29,6 +69,7 @@ export function SummaryCard({ text, streaming }: Props) {
         <h3 className="font-headline font-semibold text-on-surface text-lg">Executive Summary</h3>
         {streaming && <span className="text-xs text-primary animate-pulse ml-auto">streaming…</span>}
       </div>
+      {verification && !streaming && <VerificationBanner v={verification} />}
       <div className="prose prose-sm prose-slate font-body text-on-surface flex-1 max-w-none">
         {empty ? (
           <p className="text-on-surface-variant">

@@ -1,3 +1,9 @@
+export type Verification = {
+  status: "ok" | "warning" | "insufficient_evidence";
+  issues: { kind: string; detail: string }[];
+  needs_review: boolean;
+};
+
 export type StageEvent = {
   stage: string;
   message?: string;

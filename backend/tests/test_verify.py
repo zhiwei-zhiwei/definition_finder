@@ -11,8 +11,10 @@ def test_grounded_answer_passes():
     # "$4,070.00" vs the source's "$4070.00": same number, different formatting
     assert check("The total monthly rent is $4,070.00 (page 7).", LEASE)["status"] == "ok"
     assert check("AMD does not expect to pay dividends (page 9).", TENK)["status"] == "ok"
-    assert check("The lease is month to month.", [{"text": "month to month", "page_start": None, "page_end": None}])[
-        "status"] == "ok"  # non-PDF: no pages to check
+    html = [{"text": "A refundable pet deposit of $300.00 is due.", "page_start": None, "page_end": None}]
+    assert check("The lease is month to month.", html)["status"] == "ok"  # non-PDF: no pages to check
+    # Non-PDF answers cite excerpts by number; that 1 is not a stated figure
+    assert check("The pet deposit is $300.00 (Excerpt 1; Excerpts 1, 2, and 3).", html)["status"] == "ok"
 
 
 def test_fake_page_and_unsourced_number_warn():

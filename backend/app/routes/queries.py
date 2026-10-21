@@ -57,5 +57,6 @@ def get_query(
         "snippets": snippets,
         "summary_text": r.summary_text,
         "key_takeaway": r.key_takeaway,
+        "verification": json.loads(r.verification_json) if r.verification_json else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }

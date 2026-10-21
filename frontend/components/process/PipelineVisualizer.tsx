@@ -20,6 +20,7 @@ const STAGES: StageSpec[] = [
     icon: "filter_alt",
   },
   { key: "summarizing", label: "Synthesizing summary", icon: "psychology" },
+  { key: "verifying", label: "Checking pages & numbers", icon: "fact_check" },
 ];
 
 const PREP_STAGES: Record<string, string> = {

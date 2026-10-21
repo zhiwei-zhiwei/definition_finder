@@ -56,6 +56,9 @@ def _ensure_columns() -> None:
         "parent_chunks": [
             ("marked_text", "TEXT"),
         ],
+        "queries": [
+            ("verification_json", "TEXT"),
+        ],
     }
     with engine.begin() as conn:
         for table, cols in additions.items():

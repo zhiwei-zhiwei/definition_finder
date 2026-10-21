@@ -1,3 +1,5 @@
+import type { Verification } from "@/lib/types";
+
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
 
@@ -71,6 +73,7 @@ export type CachedQueryFull = CachedQueryRow & {
   doc_id: string;
   snippets: Snippet[];
   summary_text: string;
+  verification: Verification | null; // null on queries cached before verification existed
 };
 
 export async function listQueries(docId: string): Promise<CachedQueryRow[]> {
@@ -96,6 +99,7 @@ export type SseHandlers = {
   onStage?: (payload: any) => void;
   onSnippets?: (items: Snippet[]) => void;
   onToken?: (tok: string) => void;
+  onVerification?: (v: Verification) => void;
   onDone?: (payload: any) => void;
   onError?: (msg: string) => void;
 };
@@ -129,6 +133,9 @@ export async function consumeSSE(
         break;
       case "token":
         handlers.onToken?.(typeof data === "string" ? data : dataRaw);
+        break;
+      case "verification":
+        handlers.onVerification?.(data);
         break;
       case "done":
         handlers.onDone?.(data);

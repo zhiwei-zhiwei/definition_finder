@@ -86,3 +86,19 @@ def test_insufficient_evidence_skips_the_llm(client, doc_id, stubs, case):
     r = client.post("/query", json={"doc_id": doc_id, "query": "what is AMD's revenue?"})
     assert _events(r.text) == QUERY_EVENTS[:6] + ["token", "verification", "done"]
     assert "insufficient_evidence" in r.text and "No relevant context" in r.text
+
+
+def test_signed_in_query_caches_its_verification(client, stubs, make_user, bearer):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    _, jwt = make_user("graph@example.com", "graphuser")
+    did = uuid.uuid4().hex
+    with SessionLocal() as db:
+        uid = client.get("/auth/me", headers=bearer(jwt)).json()["user_id"]
+        db.add(Document(id=did, filename="x.pdf", mime="application/pdf", size_bytes=1, status="ready", user_id=uid))
+        db.commit()
+    client.post("/query", json={"doc_id": did, "query": "how long is the term?"}, headers=bearer(jwt))
+    [row] = client.get(f"/queries?doc_id={did}", headers=bearer(jwt)).json()
+    cached = client.get(f"/queries/{row['id']}", headers=bearer(jwt)).json()
+    # The stub answer says "5 years"; its only excerpt ("the term") doesn't.
+    assert cached["verification"]["status"] == "warning"
+    assert [i["kind"] for i in cached["verification"]["issues"]] == ["unsourced_number"]
