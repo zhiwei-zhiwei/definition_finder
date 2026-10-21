@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from langgraph.checkpoint.memory import InMemorySaver
 
 from app.services import prepare, query_graph, retrieve, summarize, vectorstore
 from app.services.retrieve import Hit
@@ -120,7 +121,16 @@ def test_frozen_failures_keep_their_verdict(case):
     assert rec["failures"] == case["failures"], case["note"]
 
 
-def test_answers_come_from_the_query_graph(monkeypatch):
+@pytest.fixture
+def eval_graph(monkeypatch):
+    """The graph as the eval script sees it: in-memory checkpoints. The test app's lifespan
+    swapped in a SQLite one bound to the TestClient's event loop; asyncio.run here would
+    drive that connection from another loop and break it for later tests."""
+    monkeypatch.setattr(query_graph, "graph", query_graph._BUILDER.compile(
+        checkpointer=InMemorySaver(serde=query_graph._SERDE)))
+
+
+def test_answers_come_from_the_query_graph(monkeypatch, eval_graph):
     monkeypatch.setattr(prepare, "has_chunks", lambda _id: True)
     monkeypatch.setattr(retrieve, "embed_query", lambda _q: [0.0])
     monkeypatch.setattr(vectorstore, "search", lambda *a: [("c1", 0.6)])
@@ -143,3 +153,36 @@ def test_answers_come_from_the_query_graph(monkeypatch):
     # ...and the evidence gate answers off-topic queries without it, as in the app.
     monkeypatch.setattr(vectorstore, "search", lambda *a: [("c1", 0.01)])
     assert asyncio.run(g._run_graph("doc", "AMD revenue?", 5))["answer"] == query_graph.NO_CONTEXT
+
+
+def test_auto_retry_resumes_paused_runs(monkeypatch, eval_graph):
+    top_ks = []
+
+    def search(db, doc_id, qvec, query, top_k):
+        top_ks.append(top_k)
+        return [Hit("c1", "p1", "Rent is $5.", 1.0, 3, None, [], None)]
+
+    answers = iter(["Rent is $7 (page 3).", "Rent is $5 (page 3)."])  # flagged ($7 is in no excerpt), then fine
+    monkeypatch.setattr(prepare, "has_chunks", lambda _id: True)
+    monkeypatch.setattr(retrieve, "embed_query", lambda _q: [0.0])
+    monkeypatch.setattr(vectorstore, "search", lambda *a: [("c1", 0.6)])
+    monkeypatch.setattr(retrieve, "hybrid_search", search)
+    monkeypatch.setattr(retrieve, "enrich_hits_from_db", lambda db, hits: hits)
+    monkeypatch.setattr(retrieve, "fetch_parent_texts", lambda db, ids: [
+        SimpleNamespace(text="Rent is $5.", marked_text="[page 3] Rent is $5.", page_start=3, page_end=None)])
+    monkeypatch.setattr(summarize, "summarize_stream", lambda *a: iter([next(answers)]))
+    state = asyncio.run(g._run_graph("doc", "What is the rent?", 5, retry=True))
+    assert state["verification"]["status"] == "warning"
+    assert state["retried"]["answer"] == "Rent is $5 (page 3)." and state["retried"]["verification"]["status"] == "ok"
+    assert top_ks == [5, 10]
+
+    ex = [{"text": "Rent is $5.", "page_start": 3, "page_end": 3}]
+    lab = {"query": "q", "gold": "Rent is $5"}
+    ok = {"claim": "c", "supported": True, "cited_pages": [3], "support_pages": [3]}
+    fixed = g._grade(lab, 0, ex, "Rent is $7 (page 3).", [ok], False)
+    fixed["retry"] = g._grade(lab, 0, ex, "Rent is $5 (page 3).", [ok], False)
+    broke = g._grade({"query": "q2"}, 0, ex, "The excerpts do not mention it.", [], True)  # correct refusal...
+    broke["retry"] = g._grade({"query": "q2"}, 0, ex, "It is $5 (page 3).", [ok], False)  # ...answered on retry
+    m = g._metrics([fixed, broke, g._grade(lab, 0, ex, "Rent is $5 (page 3).", [ok], False)])
+    assert round(m["retry_rate"], 3) == round(2 / 3, 3)
+    assert m["retry_fixed_rate"] == 1.0 and m["retry_broke_rate"] == 1.0

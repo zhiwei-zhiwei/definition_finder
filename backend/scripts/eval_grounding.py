@@ -36,6 +36,10 @@ Metrics, mean and std over --reps (the summary runs at temperature 0.2, so it va
                       taxonomy table shows recall per failure kind
   verify_precision    flagged answers that have a failure (a flag without one is a false
                       alarm, or a failure the judge missed)
+  retry_rate          answers the app paused for review (with --auto-retry: each is retried
+                      once the way the UI's "Retry with more passages" does, top_k x2)
+  retry_fixed_rate    of retried answers with a failure, the share whose retry has none
+  retry_broke_rate    of retried answers without a failure, the share whose retry has one
 
 Regression gate: --only scripts/eval_labels/amd_regressions.txt runs just the queries that
 failed before, and each --require "metric>=x" / "metric<=x" exits 1 if a mean misses it
@@ -56,6 +60,7 @@ import uuid
 from pathlib import Path
 
 import numpy as np
+from langgraph.types import Command
 
 from app.config import settings
 from app.models.db import init_db
@@ -91,16 +96,23 @@ contain the requested information, else false.
 
 Respond with JSON only: {"claims": [...], "abstained": true|false}"""
 
-async def _run_graph(doc_id: str, query: str, top_k: int, answer: bool = True) -> dict:
+async def _run_graph(doc_id: str, query: str, top_k: int, answer: bool = True, retry: bool = False) -> dict:
     """One query through the app's query graph; its final state (or the state where it paused
-    for review). answer=False stops before the summarizer, for re-judging stored answers."""
+    for review). answer=False stops before the summarizer, for re-judging stored answers.
+    retry=True resumes a run paused for review with "retry", as the UI's button does, and puts
+    the retried run's state under "retried"."""
     qid = uuid.uuid4().hex
     config = {"configurable": {"thread_id": qid}}
     graph = query_graph.graph  # module default: in-memory checkpoints, nothing written to disk
     try:
         await graph.ainvoke({"query_id": qid, "doc_id": doc_id, "query": query, "top_k": top_k, "user_id": None},
                             config, durability="exit", interrupt_before=None if answer else ["summarize"])
-        return (await graph.aget_state(config)).values
+        snap = await graph.aget_state(config)
+        state = dict(snap.values)
+        if retry and answer and snap.interrupts and snap.interrupts[0].value["can_retry"]:
+            await graph.ainvoke(Command(resume="retry"), config, durability="exit")
+            state["retried"] = (await graph.aget_state(config)).values
+        return state
     finally:
         await graph.checkpointer.adelete_thread(qid)
 
@@ -214,6 +226,9 @@ def _metrics(recs: list[dict]) -> dict[str, float]:
         "verify_flag_rate": _rate(r["flagged"] for r in recs),
         "verify_recall": _rate(r["flagged"] for r in recs if r["failures"]),
         "verify_precision": _rate(bool(r["failures"]) for r in recs if r["flagged"]),
+        "retry_rate": _rate("retry" in r for r in recs),
+        "retry_fixed_rate": _rate(not r["retry"]["failures"] for r in recs if "retry" in r and r["failures"]),
+        "retry_broke_rate": _rate(bool(r["retry"]["failures"]) for r in recs if "retry" in r and not r["failures"]),
     } | {f"fail_{name}_rate": _rate(r["failures"][:1] == [name] for r in recs) for name, _ in _FAILURES}
 
 
@@ -270,6 +285,9 @@ def _report(title: str, summ: dict, recs: list[dict], params: dict) -> str:
     section("Answerable queries it refused", ["rep", "query", "gold in excerpts", "answer"],
             [(r["rep"], r["label"]["query"], r["gold_in_context"], r["answer"][:300]) for r in recs
              if "gold" in r["label"] and r["abstained"]])
+    section("Retried with more passages", ["rep", "query", "failures before", "failures after", "answer after"],
+            [(r["rep"], r["label"]["query"], ", ".join(r["failures"]) or "none",
+              ", ".join(r["retry"]["failures"]) or "none", r["retry"]["answer"][:300]) for r in recs if "retry" in r])
     section("Flagged by verify with no failure", ["rep", "query", "verify status", "answer"],
             [(r["rep"], r["label"]["query"], r["verify_status"], r["answer"][:300]) for r in recs
              if r["flagged"] and not r["failures"]])
@@ -302,6 +320,7 @@ def _log_mlflow(args, params: dict, summ: dict, per_rep: list[dict], recs: list[
             "failures": [", ".join(r["failures"]) for r in recs],
             "verify_status": [r["verify_status"] for r in recs],
             "gated": [r["gated"] for r in recs],
+            "retry_failures": [", ".join(r["retry"]["failures"]) or "none" if "retry" in r else "" for r in recs],
         }, artifact_file="per_query.json")
         # MLflow caps tag values at 8000 chars; the full report is always in the artifact.
         mlflow.set_tag("mlflow.note.content", report if len(report) <= 8000
@@ -314,15 +333,22 @@ async def _run_all(args, labels: list[dict], doc_id: str, old: dict) -> list[dic
     """Every (rep, label) through the graph, then the judge; --workers at a time."""
     sem = asyncio.Semaphore(args.workers)
 
+    async def grade(rep: int, lab: dict, state: dict, answer: str, verification: dict | None) -> dict:
+        ex = _excerpts(state)
+        claims, abstained = await asyncio.to_thread(_judge, lab["query"], ex, answer, args.judge_model)
+        return _grade(lab, rep, ex, answer, claims, abstained, verification)
+
     async def one(rep: int, lab: dict) -> dict:
         q = lab["query"]
         async with sem:
-            state = await _run_graph(doc_id, q, args.top_k, answer=not old)
-            answer = old[(rep, q)] if old else state["answer"]
-            ex = _excerpts(state)
-            claims, abstained = await asyncio.to_thread(_judge, q, ex, answer, args.judge_model)
-        # A re-judged answer is not the one the graph would verify; _grade re-checks it.
-        return _grade(lab, rep, ex, answer, claims, abstained, None if old else state["verification"])
+            state = await _run_graph(doc_id, q, args.top_k, answer=not old, retry=args.auto_retry)
+            if old:  # a re-judged answer is not the one the graph would verify; _grade re-checks it
+                return await grade(rep, lab, state, old[(rep, q)], None)
+            rec = await grade(rep, lab, state, state["answer"], state["verification"])
+            if "retried" in state:
+                r = state["retried"]
+                rec["retry"] = await grade(rep, lab, r, r["answer"], r["verification"])
+            return rec
 
     return await asyncio.gather(*(one(rep, lab) for rep in range(args.reps) for lab in labels))
 
@@ -340,6 +366,8 @@ def main() -> None:
     ap.add_argument("--only", type=Path, help="file of queries (one per line, # comments) to keep from --labels")
     ap.add_argument("--require", action="append", default=[], metavar="METRIC>=X",
                     help='gate on a mean metric, e.g. "number_exact_rate>=0.9" or "failure_rate<=0.2"; repeatable')
+    ap.add_argument("--auto-retry", action="store_true", help="retry each answer the app pauses for review "
+                    "once with top_k x2, as the UI's retry button does, and score both (retry_* metrics)")
     ap.add_argument("--rejudge", metavar="RUN_ID", help="judge the answers stored in an earlier run "
                     "instead of generating new ones (score old answers with the current judge)")
     args = ap.parse_args()
@@ -398,7 +426,7 @@ def main() -> None:
               "contextual_embeddings": settings.CONTEXTUAL_EMBEDDINGS, "embed_model": settings.EMBED_MODEL,
               "parent_tokens": settings.PARENT_TOKENS, "child_tokens": settings.CHILD_TOKENS,
               "rejudged_run": args.rejudge or "", "only": args.only.name if args.only else "",
-              "rerank_model": settings.RERANK_MODEL or "off"}
+              "rerank_model": settings.RERANK_MODEL or "off", "auto_retry": args.auto_retry}
     report = _report(args.pdf.stem, summ, recs, params)
     print("\n" + report.split("## By tag")[1].split("## Unsupported")[0].strip())
     _log_mlflow(args, params, summ, per_rep, recs, report)
