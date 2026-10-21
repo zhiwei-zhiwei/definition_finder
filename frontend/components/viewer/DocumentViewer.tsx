@@ -7,9 +7,11 @@ import { PdfViewer } from "./PdfViewer";
 export function DocumentViewer({
   doc,
   page,
+  version,
 }: {
   doc: DocumentRecord | null;
   page: number | null;
+  version: number;
 }) {
   if (!doc) {
     return (
@@ -22,5 +24,5 @@ export function DocumentViewer({
     );
   }
   const isPdf = doc.mime === "application/pdf" || doc.filename.toLowerCase().endsWith(".pdf");
-  return isPdf ? <PdfViewer doc={doc} page={page} /> : <HtmlViewer doc={doc} />;
+  return isPdf ? <PdfViewer doc={doc} page={page} /> : <HtmlViewer doc={doc} version={version} />;
 }

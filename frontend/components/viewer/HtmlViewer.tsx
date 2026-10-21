@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { API_BASE, DocumentRecord } from "@/lib/api";
 import { authHeaders } from "@/lib/auth";
 
-export function HtmlViewer({ doc }: { doc: DocumentRecord }) {
+export function HtmlViewer({ doc, version }: { doc: DocumentRecord; version: number }) {
   const [html, setHtml] = useState<string>("");
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export function HtmlViewer({ doc }: { doc: DocumentRecord }) {
     return () => {
       active = false;
     };
-  }, [doc.id]);
+  }, [doc.id, version]);
 
   return (
     <div className="flex flex-col h-full">

@@ -27,6 +27,9 @@ export default function HomePage() {
   const [doc, setDoc] = useState<DocumentRecord | null>(null);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [pageTarget, setPageTarget] = useState<number | null>(null);
+  // Bumped after a query that prepared the doc, so the HTML viewer refetches the
+  // render that preparation just wrote (before it, /html serves a placeholder).
+  const [docVersion, setDocVersion] = useState(0);
 
   const [stage, setStage] = useState<string | null>(null);
   const [stagePayload, setStagePayload] = useState<StageEvent | null>(null);
@@ -45,9 +48,11 @@ export default function HomePage() {
     setSummary("");
     setVerification(null);
     setQueryError(null);
+    let prepared = false;
 
     await runQuery(doc.id, query, topK, {
       onStage: (payload) => {
+        if (payload.stage === "extracting") prepared = true;
         setStage(payload.stage);
         setStagePayload(payload);
       },
@@ -55,6 +60,7 @@ export default function HomePage() {
       onToken: (tok) => setSummary((prev) => prev + tok),
       onVerification: setVerification,
       onDone: () => {
+        if (prepared) setDocVersion((v) => v + 1);
         setStreaming(false);
         setStage("done");
         setQueriesRefreshKey((k) => k + 1);
@@ -144,7 +150,7 @@ export default function HomePage() {
       />
       <main className="flex-1 flex overflow-hidden w-full max-w-[1920px] mx-auto p-4 gap-6">
         <section className="w-1/2 flex flex-col bg-surface-container rounded-lg ambient-shadow overflow-hidden relative">
-          <DocumentViewer doc={doc} page={pageTarget} />
+          <DocumentViewer doc={doc} page={pageTarget} version={docVersion} />
         </section>
         <section className="w-1/4 flex flex-col gap-6 overflow-hidden">
           <PipelineVisualizer
