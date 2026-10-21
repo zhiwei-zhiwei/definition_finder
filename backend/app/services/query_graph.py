@@ -1,7 +1,7 @@
 """The /query pipeline as a LangGraph state graph.
 
-    START -(not prepared)-> prepare -> retrieve -> consolidate -> summarize -> verify -> finalize -> END
-          -(prepared)-----------------^
+    START -(not prepared)-> prepare -> retrieve -> consolidate -(evidence)-> summarize -> verify -> finalize -> END
+          -(prepared)-----------------^                  -(none)---> insufficient ----------^
 
 Every SSE event the route streams (except done/error) is written by a node via
 `writer`, and the route relays them with `astream(stream_mode="custom")`. Sync nodes
@@ -25,6 +25,7 @@ from app.services import prepare as prepare_service
 from app.services import retrieve as retrieve_service
 from app.services import summarize as summarize_service
 from app.services import verify as verify_service
+from app.services import vectorstore
 from app.services.highlight import compute_spans
 from app.utils.sse import sse_event
 
@@ -50,6 +51,7 @@ class QueryInput(TypedDict):
 
 class QueryState(QueryInput, total=False):
     hits: list[retrieve_service.Hit]
+    top_cosine: float  # best child cosine over the whole doc, the evidence gate's signal
     winners: list[str]
     votes: dict[str, int]
     excerpts: list[Excerpt]
@@ -77,7 +79,9 @@ def retrieve(state: QueryState, writer: StreamWriter) -> dict:
     with SessionLocal() as db:
         hits = retrieve_service.hybrid_search(db, state["doc_id"], qvec, state["query"], state["top_k"])
         hits = retrieve_service.enrich_hits_from_db(db, hits)
-    return {"hits": hits}
+        # ponytail: a second vector scan (~ms per doc); return it from hybrid_search if docs grow large
+        best = vectorstore.search(db, state["doc_id"], qvec, 1)
+    return {"hits": hits, "top_cosine": best[0][1] if best else 0.0}
 
 
 def consolidate(state: QueryState, writer: StreamWriter) -> dict:
@@ -111,9 +115,6 @@ def consolidate(state: QueryState, writer: StreamWriter) -> dict:
 def summarize(state: QueryState, writer: StreamWriter) -> dict:
     writer(sse_event("stage", {"stage": "summarizing"}))
     excerpts = state["excerpts"]
-    if not excerpts:
-        writer(sse_event("token", NO_CONTEXT))
-        return {"answer": NO_CONTEXT}
     tokens = []
     # Keep None pages (non-PDFs): summarize zips texts with pages by position.
     for tok in summarize_service.summarize_stream(
@@ -122,6 +123,23 @@ def summarize(state: QueryState, writer: StreamWriter) -> dict:
         tokens.append(tok)
         writer(sse_event("token", tok))
     return {"answer": "".join(tokens)}
+
+
+def _route_evidence(state: QueryState) -> str:
+    """Skip the LLM when nothing in the doc is close to the question (see EVIDENCE_MIN_COSINE)."""
+    return "summarize" if state["excerpts"] and state["top_cosine"] >= settings.EVIDENCE_MIN_COSINE else "insufficient"
+
+
+def insufficient(state: QueryState, writer: StreamWriter) -> dict:
+    """Fallback answer with no LLM call, flagged for review like a model refusal."""
+    writer(sse_event("stage", {"stage": "summarizing", "fallback": "insufficient_evidence"}))
+    writer(sse_event("token", NO_CONTEXT))
+    reason = (f"best passage similarity {state['top_cosine']:.2f} is below {settings.EVIDENCE_MIN_COSINE:.2f}"
+              if state["excerpts"] else "no passages were retrieved")
+    result = {"status": "insufficient_evidence", "issues": [{"kind": "low_evidence", "detail": reason}],
+              "needs_review": True}
+    writer(sse_event("verification", result))
+    return {"answer": NO_CONTEXT, "verification": result}
 
 
 def verify(state: QueryState, writer: StreamWriter) -> dict:
@@ -169,14 +187,15 @@ def _persist_query(state: QueryState) -> None:
 
 def _build() -> StateGraph:
     g = StateGraph(QueryState, input_schema=QueryInput)
-    for node in (prepare, retrieve, consolidate, summarize, verify, finalize):
+    for node in (prepare, retrieve, consolidate, summarize, insufficient, verify, finalize):
         g.add_node(node.__name__, node)
     g.add_conditional_edges(START, _route_start, ["prepare", "retrieve"])
     g.add_edge("prepare", "retrieve")
     g.add_edge("retrieve", "consolidate")
-    g.add_edge("consolidate", "summarize")
+    g.add_conditional_edges("consolidate", _route_evidence, ["summarize", "insufficient"])
     g.add_edge("summarize", "verify")
     g.add_edge("verify", "finalize")
+    g.add_edge("insufficient", "finalize")
     g.add_edge("finalize", END)
     return g
 

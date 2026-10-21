@@ -7,7 +7,7 @@ import pytest
 
 from app.models.db import SessionLocal
 from app.models.schema import Document
-from app.services import prepare, retrieve, summarize
+from app.services import prepare, retrieve, summarize, vectorstore
 from app.services.retrieve import Hit
 from app.utils.sse import sse_event
 
@@ -43,6 +43,7 @@ def stubs(monkeypatch):
 
     monkeypatch.setattr(prepare, "prepare_document_stream", fake_prepare)
     monkeypatch.setattr(retrieve, "embed_query", lambda _q: [0.0])
+    monkeypatch.setattr(vectorstore, "search", lambda *a: [("c1", 0.6)])  # evidence gate's best cosine
     monkeypatch.setattr(retrieve, "hybrid_search", lambda *a: [Hit("c1", "p1", "the term", 1.0, 3, 3, [], None)])
     monkeypatch.setattr(retrieve, "fetch_parent_texts", lambda db, ids: [
         SimpleNamespace(text="the term", marked_text="[page 3] the term", page_start=3, page_end=3)])
@@ -68,3 +69,20 @@ def test_node_failure_ends_stream_with_error(client, doc_id, stubs):
     r = client.post("/query", json={"doc_id": doc_id, "query": "q"})
     assert _events(r.text) == ["stage:embedding_query", "stage:searching", "error"]
     assert "search down" in r.text
+
+
+@pytest.mark.parametrize("case", ["low_similarity", "no_passages"])
+def test_insufficient_evidence_skips_the_llm(client, doc_id, stubs, case):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    if case == "low_similarity":
+        stubs.setattr(vectorstore, "search", lambda *a: [("c1", 0.05)])
+    else:
+        stubs.setattr(retrieve, "fetch_parent_texts", lambda db, ids: [])
+
+    def no_llm(*a):
+        raise AssertionError("summarizer called")
+
+    stubs.setattr(summarize, "summarize_stream", no_llm)
+    r = client.post("/query", json={"doc_id": doc_id, "query": "what is AMD's revenue?"})
+    assert _events(r.text) == QUERY_EVENTS[:6] + ["token", "verification", "done"]
+    assert "insufficient_evidence" in r.text and "No relevant context" in r.text

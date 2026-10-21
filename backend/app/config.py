@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     RERANK_MODEL: str = ""
     RERANK_CANDIDATES: int = 50
     PARENT_CONSOLIDATION_THRESHOLD: int = 3
+    # Evidence gate: below this best child cosine (vector arm, whole doc) the query graph answers
+    # "not in the document" without calling the LLM; 0 = off. Tied to EMBED_MODEL
+    # (text-embedding-3-large). Kept low on purpose: vague questions ("Give me an overview" 0.157,
+    # "Summarize this document" 0.268) score like off-topic ones (AMD questions on the lease
+    # 0.07-0.36), so 0.12 refuses none of 73 valid questions (53 labelled + 20 vague, min 0.157)
+    # and only 10 of 60 cross-document ones. The answer-side refusal check catches the rest.
+    EVIDENCE_MIN_COSINE: float = 0.12
 
     UPLOAD_DIR: str = "../data/uploads"
     CACHE_DIR: str = "../data/cache"

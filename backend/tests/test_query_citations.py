@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 from app.models.db import SessionLocal
 from app.models.schema import Document
-from app.services import prepare, retrieve, summarize
+from app.services import prepare, retrieve, summarize, vectorstore
 from app.services.chunker import chunk_document
 from app.services.ingest import ExtractedItem
 
@@ -19,6 +19,7 @@ def test_summary_context_keeps_pages_aligned(client, monkeypatch):
     r = retrieve
     monkeypatch.setattr(prepare, "has_chunks", lambda _id: True)
     monkeypatch.setattr(r, "embed_query", lambda _q: None)
+    monkeypatch.setattr(vectorstore, "search", lambda *a: [("c1", 0.6)])  # pass the evidence gate
     monkeypatch.setattr(r, "hybrid_search", lambda *a: [])
     monkeypatch.setattr(r, "consolidate", lambda *a: (["p1", "p2"], {}))
     monkeypatch.setattr(r, "fetch_parent_texts", lambda db, ids: [
