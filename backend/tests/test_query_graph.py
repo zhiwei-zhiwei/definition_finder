@@ -117,6 +117,8 @@ def test_retry_reruns_with_more_passages_and_updates_the_cache(client, stubs, ma
     stubs.setattr(retrieve, "hybrid_search", search)
     r = client.post("/query", json={"doc_id": did, "query": "how long is the term?"}, headers=bearer(jwt))
     qid = _data(r.text, "review")["query_id"]
+    # A later visit can resume it from the cache: same payload as the SSE event.
+    assert client.get(f"/queries/{qid}", headers=bearer(jwt)).json()["review"] == _data(r.text, "review")
     # Another user (or an anonymous caller) can't resume it.
     _, other = make_user("other@example.com", "otheruser")
     for headers in (bearer(other), {}):
@@ -129,8 +131,9 @@ def test_retry_reruns_with_more_passages_and_updates_the_cache(client, stubs, ma
     assert top_ks == [5, 10]
     # The retry overwrote the paused run's cached row instead of adding one.
     [row] = client.get(f"/queries?doc_id={did}", headers=bearer(jwt)).json()
-    assert row["id"] == qid
-    assert client.get(f"/queries/{qid}", headers=bearer(jwt)).json()["summary_text"] == "".join(GROUNDED)
+    assert row["id"] == qid and row["review_status"] is None  # the retried answer passed verify
+    cached = client.get(f"/queries/{qid}", headers=bearer(jwt)).json()
+    assert cached["summary_text"] == "".join(GROUNDED) and cached["review"] is None
 
 
 def test_no_retry_at_max_top_k(client, doc_id, stubs):
@@ -186,3 +189,8 @@ def test_signed_in_query_caches_its_verification(client, stubs, make_user, beare
     # The stub answer says "5 years"; its only excerpt ("the term") doesn't.
     assert cached["verification"]["status"] == "warning"
     assert [i["kind"] for i in cached["verification"]["issues"]] == ["unsourced_number"]
+    assert row["review_status"] == "pending"
+    client.post("/query/resume", json={"query_id": row["id"], "action": "accept"}, headers=bearer(jwt))
+    [row] = client.get(f"/queries?doc_id={did}", headers=bearer(jwt)).json()
+    assert row["review_status"] == "accepted"
+    assert client.get(f"/queries/{row['id']}", headers=bearer(jwt)).json()["review"] is None

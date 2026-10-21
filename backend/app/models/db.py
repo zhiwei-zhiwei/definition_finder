@@ -58,6 +58,7 @@ def _ensure_columns() -> None:
         ],
         "queries": [
             ("verification_json", "TEXT"),
+            ("review_status", "TEXT"),
         ],
     }
     with engine.begin() as conn:

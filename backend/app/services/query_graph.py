@@ -218,6 +218,7 @@ def _persist_query(state: QueryState) -> None:
             summary_text=state["answer"],
             key_takeaway=_extract_key_takeaway(state["answer"]),
             verification_json=json.dumps(state["verification"]),
+            review_status=state.get("review") or ("pending" if _route_review(state) == "review" else None),
         ))
         db.commit()
 

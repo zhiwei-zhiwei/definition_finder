@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.db import get_db
 from app.models.schema import Query, User
 from app.services.auth import get_current_user
+from app.services.query_graph import MAX_TOP_K
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/queries", tags=["queries"])
@@ -30,6 +31,7 @@ def list_queries(
             "query_text": r.query_text,
             "key_takeaway": r.key_takeaway,
             "top_k": r.top_k,
+            "review_status": r.review_status,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
@@ -58,5 +60,8 @@ def get_query(
         "summary_text": r.summary_text,
         "key_takeaway": r.key_takeaway,
         "verification": json.loads(r.verification_json) if r.verification_json else None,
+        # Same shape as the `review` SSE event, so the UI can resume a run paused in an earlier visit
+        "review": {"query_id": r.id, "can_retry": r.top_k < MAX_TOP_K, "top_k": r.top_k}
+        if r.review_status == "pending" else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
     }
