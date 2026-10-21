@@ -125,11 +125,13 @@ def consolidate(state: QueryState, writer: StreamWriter) -> dict:
         }
         for h in hits
     ]
-    writer(sse_event("snippets", snippets))
+    # Sent by summarize, not here: when the evidence gate fires they are just the least-bad
+    # passages of an unrelated doc, and the UI would show them as sources.
     return {"winners": winners, "votes": votes, "excerpts": excerpts, "snippets": snippets}
 
 
 def summarize(state: QueryState, writer: StreamWriter) -> dict:
+    writer(sse_event("snippets", state["snippets"]))
     writer(sse_event("stage", {"stage": "summarizing"}))
     excerpts = state["excerpts"]
     tokens = []
@@ -148,7 +150,8 @@ def _route_evidence(state: QueryState) -> str:
 
 
 def insufficient(state: QueryState, writer: StreamWriter) -> dict:
-    """Fallback answer with no LLM call, flagged for review like a model refusal."""
+    """Fallback answer with no LLM call, flagged for review like a model refusal. No snippets:
+    nothing retrieved supports an answer, so none is shown or cached."""
     writer(sse_event("stage", {"stage": "summarizing", "fallback": "insufficient_evidence"}))
     writer(sse_event("token", NO_CONTEXT))
     reason = (f"best passage similarity {state['top_cosine']:.2f} is below {settings.EVIDENCE_MIN_COSINE:.2f}"
@@ -156,7 +159,7 @@ def insufficient(state: QueryState, writer: StreamWriter) -> dict:
     result = {"status": "insufficient_evidence", "issues": [{"kind": "low_evidence", "detail": reason}],
               "needs_review": True}
     writer(sse_event("verification", result))
-    return {"answer": NO_CONTEXT, "verification": result}
+    return {"answer": NO_CONTEXT, "verification": result, "snippets": []}
 
 
 def verify(state: QueryState, writer: StreamWriter) -> dict:

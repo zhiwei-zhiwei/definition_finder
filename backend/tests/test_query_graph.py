@@ -189,9 +189,24 @@ def test_insufficient_evidence_skips_the_llm(client, doc_id, stubs, case):
 
     stubs.setattr(summarize, "summarize_stream", no_llm)
     r = client.post("/query", json={"doc_id": doc_id, "query": "what is AMD's revenue?"})
-    # Gated answers aren't held for review: more passages can't raise the doc's best cosine.
-    assert _events(r.text) == QUERY_EVENTS[:6] + ["token", "verification", "done"]
+    # Gated answers show no snippets and aren't held for review: more passages can't raise
+    # the doc's best cosine.
+    assert _events(r.text) == QUERY_EVENTS[:4] + ["stage:summarizing", "token", "verification", "done"]
     assert "insufficient_evidence" in r.text and "No relevant context" in r.text
+
+
+def test_gated_query_caches_no_snippets(client, stubs, make_user, bearer):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(vectorstore, "search", lambda *a: [("c1", 0.05)])
+    _, jwt = make_user("gated@example.com", "gateduser")
+    uid = client.get("/auth/me", headers=bearer(jwt)).json()["user_id"]
+    did = uuid.uuid4().hex
+    with SessionLocal() as db:
+        db.add(Document(id=did, filename="x.pdf", mime="application/pdf", size_bytes=1, status="ready", user_id=uid))
+        db.commit()
+    client.post("/query", json={"doc_id": did, "query": "what is AMD's revenue?"}, headers=bearer(jwt))
+    [row] = client.get(f"/queries?doc_id={did}", headers=bearer(jwt)).json()
+    assert client.get(f"/queries/{row['id']}", headers=bearer(jwt)).json()["snippets"] == []
 
 
 def test_signed_in_query_caches_its_verification(client, stubs, make_user, bearer):

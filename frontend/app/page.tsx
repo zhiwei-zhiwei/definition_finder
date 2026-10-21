@@ -201,7 +201,16 @@ export default function HomePage() {
             snippetCount={snippets.length}
             finished={stage === "done"}
           />
-          <SnippetList snippets={snippets} onJump={setPageTarget} />
+          <SnippetList
+            snippets={snippets}
+            onJump={setPageTarget}
+            emptyText={
+              // The evidence gate answered without sources: say so instead of the idle hint.
+              verification?.issues.some((i) => i.kind === "low_evidence")
+                ? "No passage in this document is close enough to the question to use as a source."
+                : undefined
+            }
+          />
         </section>
         <section className="w-1/4 flex flex-col gap-6 overflow-hidden">
           <QueryInput disabled={!doc} busy={streaming} onSubmit={onAnalyze} />

@@ -6,9 +6,14 @@ import { Snippet } from "@/lib/api";
 type Props = {
   snippets: Snippet[];
   onJump?: (page: number) => void;
+  emptyText?: string;
 };
 
-export function SnippetList({ snippets, onJump }: Props) {
+export function SnippetList({
+  snippets,
+  onJump,
+  emptyText = "Ask a question on the right to see source snippets here.",
+}: Props) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const allCollapsed = useMemo(
@@ -47,9 +52,7 @@ export function SnippetList({ snippets, onJump }: Props) {
       </div>
 
       {snippets.length === 0 && (
-        <div className="text-sm text-on-surface-variant px-2">
-          Ask a question on the right to see source snippets here.
-        </div>
+        <div className="text-sm text-on-surface-variant px-2">{emptyText}</div>
       )}
 
       {snippets.map((s) => {
