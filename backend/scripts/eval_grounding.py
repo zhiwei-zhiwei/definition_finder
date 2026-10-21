@@ -27,6 +27,15 @@ Metrics, mean and std over --reps (the summary runs at temperature 0.2, so it va
                       text when it has no numbers: a rough correctness proxy
   failure_rate        answers with any failure in _FAILURES; fail_<name>_rate is the share
                       whose first (primary) failure is <name>
+  gate_rate           answers the evidence gate gave without calling the summarizer
+  gate_false_refusal_rate  answerable queries the gate refused
+  verify_flag_rate    answers the app's verify step flagged for review (needs_review)
+  verify_recall       answers with any failure that verify flagged: how much the app's own
+                      check catches. unsourced_number and fake_page failures use verify's
+                      functions, so they count as caught by construction; the report's
+                      taxonomy table shows recall per failure kind
+  verify_precision    flagged answers that have a failure (a flag without one is a false
+                      alarm, or a failure the judge missed)
 
 Regression gate: --only scripts/eval_labels/amd_regressions.txt runs just the queries that
 failed before, and each --require "metric>=x" / "metric<=x" exits 1 if a mean misses it
@@ -51,6 +60,7 @@ import numpy as np
 from app.config import settings
 from app.models.db import init_db
 from app.services import query_graph, summarize
+from app.services import verify as verify_service
 from app.services.verify import cited_pages as _cited_pages
 from app.services.verify import fake_pages as _fake_pages
 from app.services.verify import has_number as _has_number
@@ -144,7 +154,11 @@ _FAILURES = [
 ]
 
 
-def _grade(label: dict, rep: int, ex: list[dict], answer: str, claims: list[dict], abstained: bool) -> dict:
+def _grade(label: dict, rep: int, ex: list[dict], answer: str, claims: list[dict], abstained: bool,
+           verification: dict | None = None) -> dict:
+    """verification: what the graph's verify (or evidence gate) said; recomputed with verify.check
+    when absent (re-judged or frozen answers never ran through the graph)."""
+    verification = verification or verify_service.check(answer, ex)
     # Only factual claims are scored; "the excerpts don't say X" is covered by `abstained`.
     claims = [c for c in claims if c.get("kind") != "meta"]
     # The judge locates support but rubber-stamps citations when asked to verify them
@@ -162,6 +176,9 @@ def _grade(label: dict, rep: int, ex: list[dict], answer: str, claims: list[dict
         "gold_hit": "gold" in label and _gold_hit(label, answer),
         "unsourced_numbers": [] if abstained else _unsourced_numbers(answer, ex),
         "gold_in_context": "gold" in label and any(_norm(g) in _norm(e["text"]) for e in ex for g in _gold_list(label)),
+        "verify_status": verification["status"],
+        "flagged": verification["needs_review"],
+        "gated": any(i["kind"] == "low_evidence" for i in verification["issues"]),
     }
     rec["failures"] = [name for name, hit in _FAILURES if hit(rec)]
     return rec
@@ -192,6 +209,11 @@ def _metrics(recs: list[dict]) -> dict[str, float]:
         "gold_hit_rate": _rate(r["gold_hit"] for r in answerable),
         "claims_per_answer": len(claims) / (len(recs) or 1),
         "failure_rate": _rate(bool(r["failures"]) for r in recs),
+        "gate_rate": _rate(r["gated"] for r in recs),
+        "gate_false_refusal_rate": _rate(r["gated"] for r in answerable),
+        "verify_flag_rate": _rate(r["flagged"] for r in recs),
+        "verify_recall": _rate(r["flagged"] for r in recs if r["failures"]),
+        "verify_precision": _rate(bool(r["failures"]) for r in recs if r["flagged"]),
     } | {f"fail_{name}_rate": _rate(r["failures"][:1] == [name] for r in recs) for name, _ in _FAILURES}
 
 
@@ -216,12 +238,13 @@ def _report(title: str, summ: dict, recs: list[dict], params: dict) -> str:
         out.append(f"| {tag} | {len(rs)} | {g} | {cp} | {_rate(r['abstained'] for r in rs):.0%} |")
 
     out += ["", "## Failure taxonomy (all reps pooled)", "",
-            "| failure | primary | any | first example |", "|---|---:|---:|---|"]
+            "flagged = of the answers whose primary failure is this kind, how many the app's verify step flagged.", "",
+            "| failure | primary | any | flagged | first example |", "|---|---:|---:|---:|---|"]
     for name, _ in _FAILURES:
         prim = [r for r in recs if r["failures"][:1] == [name]]
         out.append(f"| {name} | {len(prim)} | {sum(name in r['failures'] for r in recs)} | "
-                   f"{_cell(prim[0]['label']['query']) if prim else ''} |")
-    out.append(f"| (none) | {sum(not r['failures'] for r in recs)} | | |")
+                   f"{sum(r['flagged'] for r in prim)} | {_cell(prim[0]['label']['query']) if prim else ''} |")
+    out.append(f"| (none) | {sum(not r['failures'] for r in recs)} | | {sum(r['flagged'] for r in recs if not r['failures'])} | |")
 
     def section(head, cols, rows):
         out.extend(["", f"## {head} ({len(rows)})", "", "| " + " | ".join(cols) + " |",
@@ -247,6 +270,9 @@ def _report(title: str, summ: dict, recs: list[dict], params: dict) -> str:
     section("Answerable queries it refused", ["rep", "query", "gold in excerpts", "answer"],
             [(r["rep"], r["label"]["query"], r["gold_in_context"], r["answer"][:300]) for r in recs
              if "gold" in r["label"] and r["abstained"]])
+    section("Flagged by verify with no failure", ["rep", "query", "verify status", "answer"],
+            [(r["rep"], r["label"]["query"], r["verify_status"], r["answer"][:300]) for r in recs
+             if r["flagged"] and not r["failures"]])
     return "\n".join(out) + "\n"
 
 
@@ -274,6 +300,8 @@ def _log_mlflow(args, params: dict, summ: dict, per_rep: list[dict], recs: list[
             "gold_hit": [r["gold_hit"] for r in recs],
             "unsourced_numbers": [str(r["unsourced_numbers"]) for r in recs],
             "failures": [", ".join(r["failures"]) for r in recs],
+            "verify_status": [r["verify_status"] for r in recs],
+            "gated": [r["gated"] for r in recs],
         }, artifact_file="per_query.json")
         # MLflow caps tag values at 8000 chars; the full report is always in the artifact.
         mlflow.set_tag("mlflow.note.content", report if len(report) <= 8000
@@ -293,7 +321,8 @@ async def _run_all(args, labels: list[dict], doc_id: str, old: dict) -> list[dic
             answer = old[(rep, q)] if old else state["answer"]
             ex = _excerpts(state)
             claims, abstained = await asyncio.to_thread(_judge, q, ex, answer, args.judge_model)
-        return _grade(lab, rep, ex, answer, claims, abstained)
+        # A re-judged answer is not the one the graph would verify; _grade re-checks it.
+        return _grade(lab, rep, ex, answer, claims, abstained, None if old else state["verification"])
 
     return await asyncio.gather(*(one(rep, lab) for rep in range(args.reps) for lab in labels))
 

@@ -88,6 +88,27 @@ def test_failure_taxonomy_primary_order():
     assert round(m["failure_rate"], 3) == round(8 / 9, 3) and round(m["fail_wrong_page_rate"], 3) == round(1 / 9, 3)
 
 
+def test_verify_and_gate_metrics():
+    ex = [{"text": "Revenue was $23.6 billion, up 44%.", "page_start": 5, "page_end": 5}]
+    lab = {"query": "q", "gold": "Revenue was $23.6 billion"}
+    ok = {"claim": "c", "supported": True, "cited_pages": [5], "support_pages": [5]}
+    gate = {"status": "insufficient_evidence", "issues": [{"kind": "low_evidence", "detail": ""}], "needs_review": True}
+    recs = [
+        g._grade(lab, 0, ex, "Revenue grew 47% (page 5).", [ok], False),             # failure, flagged
+        g._grade(lab, 0, ex, "Revenue was $23.6 billion (page 5).",
+                 [{**ok, "support_pages": [6]}], False),                              # wrong_page: verify can't see
+        g._grade(lab, 0, ex, "Revenue was $23.6 billion (page 5).", [ok], False),    # fine, not flagged
+        g._grade({"query": "q2"}, 0, ex, "The excerpts do not mention it.", [], True),  # flagged refusal, no failure
+        g._grade(lab, 0, [], "No relevant context was found in this document.", [], True, gate),  # gated miss
+    ]
+    assert [r["flagged"] for r in recs] == [True, False, False, True, True]
+    m = g._metrics(recs)
+    assert round(m["verify_recall"], 3) == round(2 / 3, 3)     # caught 2 of the 3 failures
+    assert round(m["verify_precision"], 3) == round(2 / 3, 3)  # the refusal was a correct abstention
+    assert m["gate_rate"] == 0.2 and m["gate_false_refusal_rate"] == 0.25
+    assert "| wrong_page | 1 | 1 | 0 |" in g._report("t", {}, recs, {})
+
+
 _CASES = json.loads((Path(__file__).parent / "fixtures" / "grounding_regressions.json").read_text())
 
 
