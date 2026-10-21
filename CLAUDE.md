@@ -43,19 +43,20 @@ pnpm lint             # next lint / eslint
 
 Docker: `docker compose up --build` from the repo root (backend `.env` injected at runtime, `./data` bind-mounted to `/app/data`, CPU-only torch). CI (`.github/workflows/ci.yml`, every push): `ruff check app scripts tests` (ruff is pinned — newer releases enable more default rules), `pytest`, the offline retrieval gate `python scripts/eval_smoke.py`, then a build-only of both images (the frontend's `next build` also runs `next lint` with `.eslintrc.json`, so lint errors fail it). The gate replays `hybrid_search` + `consolidate` on `tests/fixtures/retrieval_amd.npz` (frozen AMD 10-K chunks + float16 vectors, no API calls) and exits 1 below the `GATES` floors (frozen values minus one query). Re-freeze with `scripts/freeze_retrieval_fixture.py` and re-set `GATES` when chunking, the embedding model or the labels change; raise `GATES` after a real improvement.
 
-Wipe local state: `bash backend/scripts/wipe_data.sh` from the repo root. The script first writes a timestamped backup at `data.bak.<ts>` (embeddings cost real OpenAI dollars to regenerate) and then removes `app.db`, `uploads/`, `cache/`. Restore with `mv data.bak.<ts> data` after `rm -rf data`.
+Wipe local state: `bash backend/scripts/wipe_data.sh` from the repo root. The script first writes a timestamped backup at `data.bak.<ts>` (embeddings cost real OpenAI dollars to regenerate) and then removes `app.db`, `checkpoints.db`, `uploads/`, `cache/`. Restore with `mv data.bak.<ts> data` after `rm -rf data`.
 
 ## Architecture
 
 ### Storage layout — everything under `data/` at the repo root
 
-The backend resolves paths relative to its CWD (`backend/`) using `../data/...`. All three stores live there and must stay in sync; deleting one without the others leaves the app in a broken state. Use `DELETE /documents/{id}` (SQLAlchemy cascade — which removes the child rows and therefore the embeddings — plus filesystem unlink) rather than removing files by hand.
+The backend resolves paths relative to its CWD (`backend/`) using `../data/...`. All four stores live there and must stay in sync; deleting one without the others leaves the app in a broken state. Use `DELETE /documents/{id}` (SQLAlchemy cascade — which removes the child rows and therefore the embeddings — plus filesystem unlink) rather than removing files by hand.
 
 Embeddings used to live in a per-doc Chroma collection; they now live as float32 BLOBs on `child_chunks.embedding`, so there is no separate vector store to keep in sync. Retrieval is per-document, so a brute-force numpy cosine over those BLOBs (`services/vectorstore.py`) beats an ANN index on both latency and operational weight.
 
 | Store      | Path                         | Holds                                                                                                                                                                                                                                    |
 | ---------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite     | `data/app.db`                | `users`, `email_codes` (auth); `documents`, `parent_chunks`, `child_chunks` (metadata + full text + bbox JSON + situating `context_text` + float32 `embedding` BLOB); `queries` (cached past-query results for the drawer's Queries tab, with the verify result in `verification_json`) |
+| SQLite     | `data/app.db`                | `users`, `email_codes` (auth); `documents`, `parent_chunks`, `child_chunks` (metadata + full text + bbox JSON + situating `context_text` + float32 `embedding` BLOB); `queries` (cached past-query results for the drawer's Queries tab, with the verify result in `verification_json` and the human verdict in `review_status`) |
+| Checkpoints | `data/checkpoints.db`       | LangGraph checkpoints of query runs paused for review (`AsyncSqliteSaver`, its own file so it never contends with SQLAlchemy's writes). Finished runs are deleted; a paused run whose doc is deleted lingers harmlessly (resume re-checks the doc). |
 | Uploads    | `data/uploads/<doc_id><ext>` | Original files                                                                                                                                                                                                                           |
 | HTML cache | `data/cache/<doc_id>.html`   | Docling's HTML render with `<span data-chunk-id=...>` anchors injected by `prepare._inject_chunk_anchors`                                                                                                                                |
 
@@ -85,7 +86,7 @@ Real email-based auth with two sign-in methods: password and email code (6-digit
 
 ### Query graph (`backend/app/services/query_graph.py`)
 
-`POST /query` checks access in the route, then relays `graph.astream(state, stream_mode="custom")`: a LangGraph `StateGraph` over a typed `QueryState` (TypedDict; inputs `doc_id`/`query`/`top_k`/`user_id`, then hits, excerpts, snippets, answer, verification). Nodes call the services below and write every SSE event themselves through the injected `writer` (a parameter, not `get_stream_writer()`, which async nodes can't reach on Python < 3.11). Sync nodes run in LangGraph's thread pool, so the blocking OpenAI calls don't stall the event loop and tokens still stream; that replaced the old hand-written thread bridge. Keep DB sessions inside nodes (open `SessionLocal` per node), never in state.
+`POST /query` checks access in the route, then relays `query_graph.run()` (`graph.astream(..., stream_mode=["custom", "updates"], durability="exit")`): a LangGraph `StateGraph` over a typed `QueryState` (TypedDict; inputs `query_id`/`doc_id`/`query`/`top_k`/`user_id`, then hits, excerpts, snippets, answer, verification, review). Each run is a checkpointed thread keyed by `query_id` (also the cached `Query` row id): the app lifespan swaps in an `AsyncSqliteSaver` on `CHECKPOINT_DB` (module default `InMemorySaver`, so scripts can import the graph), a run writes one checkpoint when it exits, and `run()` deletes it unless the run is paused. The serializer allow-lists `retrieve.Hit` (msgpack refuses unregistered classes). Nodes call the services below and write every SSE event themselves through the injected `writer` (a parameter, not `get_stream_writer()`, which async nodes can't reach on Python < 3.11). Sync nodes run in LangGraph's thread pool, so the blocking OpenAI calls don't stall the event loop and tokens still stream; that replaced the old hand-written thread bridge. Keep DB sessions inside nodes (open `SessionLocal` per node), never in state.
 
 ```mermaid
 graph TD
@@ -94,12 +95,16 @@ graph TD
   retrieve --> consolidate
   consolidate -.evidence.-> summarize --> verify --> finalize
   consolidate -.no evidence.-> insufficient --> finalize
-  finalize --> END
+  finalize -.ok or gated.-> END
+  finalize -.flagged.-> review
+  review -.accept / reject.-> finalize
+  review -.retry, top_k x2.-> retrieve
 ```
 
 - **Evidence gate** (`_route_evidence`): no excerpts, or best child cosine over the whole doc below `EVIDENCE_MIN_COSINE` (0.12), goes to `insufficient` (fixed "not in the document" answer, no LLM call). Kept low on purpose: vague questions ("Give me an overview" 0.157) score like off-topic ones (0.07–0.36 cross-document), so a higher bar refuses valid questions; 0.12 refused none of 73 valid ones and catches only clearly unrelated queries. Re-derive it if the embedding model changes.
 - **`verify`** runs after the answer has streamed, so it annotates rather than blocks it (no buffering). `services/verify.py::check` → `{status: ok | warning | insufficient_evidence, issues, needs_review}`: a refusal in the answer's first sentence → `insufficient_evidence` (matched all 212 judge-flagged abstentions in 788 past AMD answers, 3 false hits); pages cited outside every excerpt's span or numbers no excerpt states → `warning`. Regex + Decimal only, no LLM: it can't catch a wrong-but-in-range page or an unsupported claim (those need the eval's judge). The same functions back `eval_grounding.py`.
-- **`finalize`** caches the result (incl. `verification_json`) for signed-in users.
+- **`finalize`** caches the result (incl. `verification_json`, `review_status`) for signed-in users, before any pause so an unreviewed run is still cached, and `merge`s the same row after a retry or verdict.
+- **`review`** (human in the loop): `_route_review` sends a flagged answer (`needs_review`, not from the evidence gate, whose fallback more passages can't fix, and no verdict yet) here, and `interrupt()` pauses the run. `run()` turns the pause into a `review` SSE event; `POST /query/resume {query_id, action: accept | reject | retry}` continues it after checking the run is paused (resuming an unknown thread would start a fresh run), belongs to the caller and its doc is still accessible. Accept/reject set `review` and go back to `finalize`; retry doubles `top_k` (capped at `MAX_TOP_K` 50, `can_retry` false at the cap) and loops to `retrieve`. On resume LangGraph re-runs the node from the top, so nothing before `interrupt()` may have side effects. Rejected answers stay cached as human labels. Two concurrent resumes of one run both execute (the UI sends one at a time).
 
 ### Retrieval pipeline (`backend/app/services/`)
 
@@ -125,9 +130,10 @@ The single endpoint streams typed events; the frontend's `consumeSSE` (in `front
 - `snippets` — array of clickable child hits (with bboxes + html_anchor + `highlight_spans: [[start,end], ...]`). Emitted **before** the summary tokens, so the UI can render the snippet list while the LLM is still generating. Spans are character offsets into `text`; the frontend slices and wraps matches in `<strong>` (no HTML injection, so no DOMPurify).
 - `token` — raw string fragments of the LLM summary; concatenated client-side.
 - `verification` — `{status, issues: [{kind, detail}], needs_review}` after the last token; `SummaryCard` shows it as a banner.
+- `review` — `{query_id, can_retry, top_k}` when the run paused for review (just before `done`); the banner shows Accept / Reject / Retry with more passages, which call `POST /query/resume` (same event stream; a retry streams a whole new answer). `GET /queries/{id}` returns the same payload as `review` while the cached query is pending, so the run can be resumed after a reload.
 - `done` / `error` — terminal events.
 
-All of these except `done`/`error` come from graph nodes (see Query graph). `summarize_stream` stays a sync generator; the summarize node is a sync node, so LangGraph runs it in a worker thread.
+All of these except `done`/`error` come from graph nodes (`review` is a node's `interrupt()` payload, relayed by `run()`) (see Query graph). `summarize_stream` stays a sync generator; the summarize node is a sync node, so LangGraph runs it in a worker thread.
 
 ### Frontend layout
 
@@ -135,7 +141,7 @@ All of these except `done`/`error` come from graph nodes (see Query graph). `sum
 
 - Col 1 (`viewer/`): `DocumentViewer` routes by mime — `PdfViewer` (react-pdf, bbox overlay) for PDFs, `HtmlViewer` (Docling render + `data-chunk-id` scroll/highlight) for everything else. Until a doc's first query `/html` serves a placeholder, so `page.tsx` bumps a `version` prop after a query that ran the prepare stages and the viewer refetches once.
 - Col 2 (`process/`): `PipelineVisualizer` consumes stage events; `SnippetList` renders each hit as a collapsible card (header = bold "Page N" + parent_id + score badge + chevron toggle; expanded body = `HighlightedText` (slices `text` by `highlight_spans` and wraps matches in `<strong>` with a primary-tint background) + a "Jump to page N →" button that drives `pageTarget`). A "Collapse all / Expand all" toggle sits in the section header. Cards must keep `shrink-0` — the container is `flex flex-col` with overflow scroll, and without it collapsed cards get flex-shrunk to a few pixels.
-- Col 3 (`query/`): `QueryInput` + `SummaryCard` (streams the `**Key Takeaway:**` line into a callout).
+- Col 3 (`query/`): `QueryInput` + `SummaryCard` (streams the `**Key Takeaway:**` line into a callout; the verification banner carries the review buttons). The drawer's Queries tab badges pending ("Needs review") and rejected queries.
 
 The PDF viewer uses `react-pdf`'s reported page dimensions (which include current scale) — bbox overlay math accounts for that. If you change zoom or fit logic, retest highlighting.
 
@@ -144,7 +150,7 @@ The PDF viewer uses `react-pdf`'s reported page dimensions (which include curren
 ## Conventions worth knowing
 
 - **Two terminals during dev** — backend venv must stay active in one; frontend `pnpm dev` runs in the other. Don't cross the streams.
-- **Config flows through `app.config.settings`** (pydantic-settings, reads `backend/.env`). Tunables: `PARENT_TOKENS`, `CHILD_TOKENS`, `DEFAULT_TOP_K`, `PARENT_CONSOLIDATION_THRESHOLD`, `CONTEXTUAL_EMBEDDINGS` (toggle contextual retrieval; default off — see report §6), `CONTEXT_MODEL`, `RERANK_MODEL` / `RERANK_CANDIDATES` (cross-encoder rerank; empty = off), `EVIDENCE_MIN_COSINE` (query graph's evidence gate; 0 = off), `CONTEXT_MAX_DOC_TOKENS` (cap on the cached doc prefix), `EMBED_DIM` (optional OpenAI Matryoshka truncation — `None` keeps the model default; lower = smaller BLOBs/faster cosine at some recall cost), model names, paths, `JWT_SECRET` (override in prod — RFC 7518 wants ≥32 bytes for HS256), `JWT_EXP_SECONDS` (default 30d), `CODE_LENGTH` / `CODE_TTL_SECONDS` / `CODE_RESEND_SECONDS` / `CODE_MAX_ATTEMPTS`, `EMAIL_BACKEND` (`"console"` | `"resend"`) + `RESEND_API_KEY` / `EMAIL_FROM`, `FRONTEND_URL` (base for verify/reset links), `VERIFY_TTL_SECONDS` (24h) / `RESET_TTL_SECONDS` (30m). DB column additions are patched in by an idempotent `db._ensure_columns()` since `create_all` never ALTERs.
+- **Config flows through `app.config.settings`** (pydantic-settings, reads `backend/.env`). Tunables: `PARENT_TOKENS`, `CHILD_TOKENS`, `DEFAULT_TOP_K`, `PARENT_CONSOLIDATION_THRESHOLD`, `CONTEXTUAL_EMBEDDINGS` (toggle contextual retrieval; default off — see report §6), `CONTEXT_MODEL`, `RERANK_MODEL` / `RERANK_CANDIDATES` (cross-encoder rerank; empty = off), `EVIDENCE_MIN_COSINE` (query graph's evidence gate; 0 = off), `CHECKPOINT_DB` (LangGraph checkpoints), `CONTEXT_MAX_DOC_TOKENS` (cap on the cached doc prefix), `EMBED_DIM` (optional OpenAI Matryoshka truncation — `None` keeps the model default; lower = smaller BLOBs/faster cosine at some recall cost), model names, paths, `JWT_SECRET` (override in prod — RFC 7518 wants ≥32 bytes for HS256), `JWT_EXP_SECONDS` (default 30d), `CODE_LENGTH` / `CODE_TTL_SECONDS` / `CODE_RESEND_SECONDS` / `CODE_MAX_ATTEMPTS`, `EMAIL_BACKEND` (`"console"` | `"resend"`) + `RESEND_API_KEY` / `EMAIL_FROM`, `FRONTEND_URL` (base for verify/reset links), `VERIFY_TTL_SECONDS` (24h) / `RESET_TTL_SECONDS` (30m). DB column additions are patched in by an idempotent `db._ensure_columns()` since `create_all` never ALTERs.
 - **Re-prepare on chunk-config change** isn't automatic. If you change `CHILD_TOKENS` / `PARENT_TOKENS` / `EMBED_DIM` / `CONTEXTUAL_EMBEDDINGS`, already-prepared docs keep their old chunks + vectors (the gate is "any child row has an embedding"). Delete + re-upload (or null out the doc's `child_chunks.embedding`) to pick up the change.
 - **CORS** is driven by the comma-separated `CORS_ORIGINS` env var; default permits only `http://localhost:3000`.
 - **Without `OPENAI_API_KEY`**, upload still works but `/query` 401s on the first embed call (query embedding) — fail mode is loud, not silent.
