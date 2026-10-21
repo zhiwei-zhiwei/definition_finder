@@ -27,6 +27,7 @@ dependencies = [
     # Direct (docling pulls them in anyway) so [tool.uv.sources] can route Linux to the CPU wheels
     "torch>=2.2",
     "torchvision>=0.17",
+    "langgraph-checkpoint-sqlite>=3",
 ]
 
 [project.optional-dependencies]

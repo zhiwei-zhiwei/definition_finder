@@ -6,6 +6,7 @@ import tempfile
 
 _TMP = tempfile.mkdtemp(prefix="lexisai-test-")
 os.environ["SQLITE_URL"] = f"sqlite:///{_TMP}/test.db"
+os.environ["CHECKPOINT_DB"] = f"{_TMP}/checkpoints.db"
 os.environ["EMAIL_BACKEND"] = "console"
 os.environ["JWT_SECRET"] = "test-secret-test-secret-test-secret-0123"
 os.environ["OPENAI_API_KEY"] = "test-key-not-used"

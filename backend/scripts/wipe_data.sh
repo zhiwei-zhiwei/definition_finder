@@ -23,8 +23,8 @@ BACKUP="$REPO_ROOT/data.bak.$TS"
 echo "backing up $DATA_DIR -> $BACKUP"
 cp -R "$DATA_DIR" "$BACKUP"
 
-echo "removing app.db / uploads / cache (embeddings live in app.db now)"
-rm -rf "$DATA_DIR/app.db" "$DATA_DIR/chroma" "$DATA_DIR/uploads" "$DATA_DIR/cache"
+echo "removing app.db / checkpoints.db / uploads / cache (embeddings live in app.db now)"
+rm -rf "$DATA_DIR/app.db" "$DATA_DIR/checkpoints.db" "$DATA_DIR/chroma" "$DATA_DIR/uploads" "$DATA_DIR/cache"
 
 echo "done. restart the backend to recreate the schema."
 echo "to restore: rm -rf $DATA_DIR && mv $BACKUP $DATA_DIR"

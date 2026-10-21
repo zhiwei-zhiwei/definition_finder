@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -43,8 +44,10 @@ async def _query_stream(req: QueryRequest, user_id: str | None):
                 yield sse_event("error", {"message": "forbidden"})
                 return
 
-        state = {"doc_id": req.doc_id, "query": req.query, "top_k": req.top_k, "user_id": user_id}
-        async for event in query_graph.graph.astream(state, stream_mode="custom"):
+        query_id = uuid.uuid4().hex
+        state = {"query_id": query_id, "doc_id": req.doc_id, "query": req.query, "top_k": req.top_k,
+                 "user_id": user_id}
+        async for event in query_graph.run(state, query_id):
             yield event
         yield sse_event("done", {})
     except Exception as exc:

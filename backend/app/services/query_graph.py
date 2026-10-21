@@ -9,12 +9,20 @@ run in LangGraph's thread pool, so the blocking OpenAI calls don't stall the eve
 loop and tokens still flush as the model produces them. `writer` is injected as a
 parameter rather than fetched with `get_stream_writer()`, which async nodes can't
 reach on Python < 3.11.
+
+Each run is a checkpointed thread keyed by its query id (the app swaps in a SQLite
+checkpointer at startup, see `checkpointed`). Checkpoints are written only when a run
+exits (`durability="exit"`) and deleted by `run` unless the run is paused.
 """
 import json
 import logging
-import uuid
+from contextlib import asynccontextmanager
 from typing import TypedDict
 
+import aiosqlite
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import StreamWriter
 
@@ -43,6 +51,7 @@ class Excerpt(TypedDict):
 
 
 class QueryInput(TypedDict):
+    query_id: str  # the run's thread id, and its cached Query row id
     doc_id: str
     query: str
     top_k: int
@@ -173,7 +182,7 @@ def _extract_key_takeaway(text: str) -> str | None:
 def _persist_query(state: QueryState) -> None:
     with SessionLocal() as db:
         db.add(Query(
-            id=uuid.uuid4().hex,
+            id=state["query_id"],
             user_id=state["user_id"],
             doc_id=state["doc_id"],
             query_text=state["query"],
@@ -201,4 +210,29 @@ def _build() -> StateGraph:
     return g
 
 
-graph = _build().compile()
+# Checkpoints hold retrieve.Hit dataclasses; msgpack only revives allow-listed classes.
+_SERDE = JsonPlusSerializer(allowed_msgpack_modules=[("app.services.retrieve", "Hit")])
+_BUILDER = _build()
+graph = _BUILDER.compile(checkpointer=InMemorySaver(serde=_SERDE))  # until the app starts
+
+
+@asynccontextmanager
+async def checkpointed():
+    """App lifespan: keep checkpoints in SQLite so paused runs survive a restart."""
+    global graph
+    async with aiosqlite.connect(settings.CHECKPOINT_DB) as conn:
+        saver = AsyncSqliteSaver(conn, serde=_SERDE)
+        await saver.setup()
+        graph = _BUILDER.compile(checkpointer=saver)
+        yield
+
+
+async def run(graph_input, query_id: str):
+    """Relay one run's SSE events; drop its checkpoints unless it is paused."""
+    config = {"configurable": {"thread_id": query_id}}
+    try:
+        async for event in graph.astream(graph_input, config, stream_mode="custom", durability="exit"):
+            yield event
+    finally:
+        if not (await graph.aget_state(config)).interrupts:
+            await graph.checkpointer.adelete_thread(query_id)

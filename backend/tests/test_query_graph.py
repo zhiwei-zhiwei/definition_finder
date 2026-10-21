@@ -1,10 +1,12 @@
 """POST /query streams every stage from the query graph, in the order the frontend expects."""
 import json
+import sqlite3
 import uuid
 from types import SimpleNamespace
 
 import pytest
 
+from app.config import settings
 from app.models.db import SessionLocal
 from app.models.schema import Document
 from app.services import prepare, retrieve, summarize, vectorstore
@@ -57,6 +59,18 @@ def test_query_streams_graph_events_in_order(client, doc_id, stubs, prepared):
     r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
     # Unprepared docs run the prepare node first; prepared ones skip it.
     assert _events(r.text) == ([] if prepared else ["stage:extracting"]) + QUERY_EVENTS
+
+
+def _checkpoints() -> int:
+    with sqlite3.connect(settings.CHECKPOINT_DB) as c:
+        return c.execute("SELECT count(*) FROM checkpoints").fetchone()[0]
+
+
+def test_finished_runs_leave_no_checkpoints(client, doc_id, stubs):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    before = _checkpoints()
+    client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    assert _checkpoints() == before
 
 
 def test_node_failure_ends_stream_with_error(client, doc_id, stubs):

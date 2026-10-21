@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "../data/uploads"
     CACHE_DIR: str = "../data/cache"
     SQLITE_URL: str = "sqlite:///../data/app.db"
+    # LangGraph checkpoints (query graph runs paused for human review); own file so the
+    # async checkpointer never contends with SQLAlchemy's writes to app.db.
+    CHECKPOINT_DB: str = "../data/checkpoints.db"
 
     CORS_ORIGINS: str = "http://localhost:3000"
 
