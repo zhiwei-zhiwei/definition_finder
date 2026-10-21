@@ -1,6 +1,6 @@
 """The /query pipeline as a LangGraph state graph.
 
-    START -(not prepared)-> prepare -> retrieve -> consolidate -> summarize -> finalize -> END
+    START -(not prepared)-> prepare -> retrieve -> consolidate -> summarize -> verify -> finalize -> END
           -(prepared)-----------------^
 
 Every SSE event the route streams (except done/error) is written by a node via
@@ -24,6 +24,7 @@ from app.models.schema import Query
 from app.services import prepare as prepare_service
 from app.services import retrieve as retrieve_service
 from app.services import summarize as summarize_service
+from app.services import verify as verify_service
 from app.services.highlight import compute_spans
 from app.utils.sse import sse_event
 
@@ -54,6 +55,7 @@ class QueryState(QueryInput, total=False):
     excerpts: list[Excerpt]
     snippets: list[dict]
     answer: str
+    verification: dict  # verify.check(): status ok | warning | insufficient_evidence, issues, needs_review
 
 
 def _route_start(state: QueryState) -> str:
@@ -122,6 +124,14 @@ def summarize(state: QueryState, writer: StreamWriter) -> dict:
     return {"answer": "".join(tokens)}
 
 
+def verify(state: QueryState, writer: StreamWriter) -> dict:
+    """Runs after the answer has streamed, so it annotates rather than blocks it."""
+    writer(sse_event("stage", {"stage": "verifying"}))
+    result = verify_service.check(state["answer"], state["excerpts"])
+    writer(sse_event("verification", result))
+    return {"verification": result}
+
+
 def finalize(state: QueryState) -> dict:
     """Cache the result for the signed-in user's Queries tab; a failed cache never fails the query."""
     if state["user_id"] is not None:
@@ -159,13 +169,14 @@ def _persist_query(state: QueryState) -> None:
 
 def _build() -> StateGraph:
     g = StateGraph(QueryState, input_schema=QueryInput)
-    for node in (prepare, retrieve, consolidate, summarize, finalize):
+    for node in (prepare, retrieve, consolidate, summarize, verify, finalize):
         g.add_node(node.__name__, node)
     g.add_conditional_edges(START, _route_start, ["prepare", "retrieve"])
     g.add_edge("prepare", "retrieve")
     g.add_edge("retrieve", "consolidate")
     g.add_edge("consolidate", "summarize")
-    g.add_edge("summarize", "finalize")
+    g.add_edge("summarize", "verify")
+    g.add_edge("verify", "finalize")
     g.add_edge("finalize", END)
     return g
 

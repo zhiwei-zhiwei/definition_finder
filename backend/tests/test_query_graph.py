@@ -12,7 +12,7 @@ from app.services.retrieve import Hit
 from app.utils.sse import sse_event
 
 QUERY_EVENTS = ["stage:embedding_query", "stage:searching", "stage:consolidating", "stage:fetching_context",
-                "snippets", "stage:summarizing", "token", "token", "done"]
+                "snippets", "stage:summarizing", "token", "token", "stage:verifying", "verification", "done"]
 
 
 def _events(body: str) -> list[str]:

@@ -43,7 +43,6 @@ import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
-from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import numpy as np
@@ -51,6 +50,11 @@ import numpy as np
 from app.config import settings
 from app.models.db import SessionLocal, init_db
 from app.services import retrieve, summarize
+from app.services.verify import cited_pages as _cited_pages
+from app.services.verify import fake_pages as _fake_pages
+from app.services.verify import has_number as _has_number
+from app.services.verify import numbers as _numbers
+from app.services.verify import unsourced_numbers as _unsourced_numbers
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # sibling import also works when loaded by tests
 from eval_retrieval import _cleanup, _gold_list, _ingest_doc, _mlflow_experiment, _norm, _prepare  # noqa: E402
@@ -76,11 +80,7 @@ contain the requested information, else false.
 
 Respond with JSON only: {"claims": [...], "abstained": true|false}"""
 
-# "page 47", "pages 50–51 and 60", "pages 1, 5, and 41", "p. 9", "pp. 3-4"
-# ponytail: "(page 47, 2022)" also collects 2022; tighten if fake_page_rate flags it
-_PAGE_RE = re.compile(r"\bp(?:ages?|p?\.)\s*(\d+(?:\s*(?:,\s*(?:and|&)?|–|-|and|&)\s*\d+)*)", re.IGNORECASE)
-_LIST_MARK_RE = re.compile(r"^\s*\d+[.)]\s", re.MULTILINE)  # "2. Expanding data center…"
-_NO_CONTEXT = "No relevant context was found in this document."  # same fallback as routes/query.py
+_NO_CONTEXT = "No relevant context was found in this document."  # same fallback as services/query_graph.py
 
 
 def _answer_inputs(db, doc_id: str, label: dict, top_k: int) -> list[dict]:
@@ -115,53 +115,10 @@ def _judge(query: str, ex: list[dict], answer: str, model: str) -> tuple[list[di
     return out.get("claims", []), bool(out.get("abstained"))
 
 
-def _cited_pages(answer: str) -> list[int]:
-    return sorted({int(n) for m in _PAGE_RE.findall(answer) for n in re.findall(r"\d+", m)})
-
-
-def _fake_pages(cited: list[int], ex: list[dict]) -> list[int]:
-    """Cited pages that fall outside every excerpt's page span: the model never saw them."""
-    spans = [(e["page_start"], e["page_end"]) for e in ex if e["page_start"] is not None]
-    return [p for p in cited if not any(a <= p <= b for a, b in spans)]
-
-
-# "25,000", "$23.6 billion", "16%", "$5B"; not the 300 in "MI300" or the 1 in "Q1"
-_NUM_RE = re.compile(r"(?<![\w.])(\d+(?:,\d{3})*(?:\.\d+)?)(?!\d)"
-                     r"(?:\s*(%|percent\b|thousand\b|million\b|billion\b)|([BM])\b)?", re.IGNORECASE)
-_SCALE = {"thousand": 3, "million": 6, "m": 6, "billion": 9, "b": 9}
-
-
-def _numbers(text: str) -> list[tuple[Decimal, Decimal, bool, str]]:
-    """(value, precision, is_percent, as written) per number; page citations and list markers
-    are not numbers here."""
-    out = []
-    for m in _NUM_RE.finditer(_LIST_MARK_RE.sub(" ", _PAGE_RE.sub(" ", text))):
-        unit = (m[2] or m[3] or "").lower()
-        d, k = Decimal(m[1].replace(",", "")), _SCALE.get(unit, 0)
-        out.append((d.scaleb(k), Decimal(1).scaleb(d.as_tuple().exponent + k), unit in ("%", "percent"), m[0]))
-    return out
-
-
-def _has_number(want: tuple, text: str) -> bool:
-    """`text` states `want`, possibly more precisely: $23,601 million counts for $23.6 billion.
-    In text saying "in millions" (10-K tables), a bare 23,601 also counts as 23,601 million."""
-    v, q, pct = want[:3]
-    have = [(h, p) for h, _, p, _ in _numbers(text)]
-    if re.search(r"in millions", text, re.IGNORECASE):  # ponytail: per text, not per table
-        have += [(h.scaleb(6), p) for h, p in have if not p]
-    return any(p == pct and (h / q).to_integral_value(ROUND_HALF_UP) * q == v for h, p in have)
-
-
 def _key_numbers(label: dict) -> list[tuple]:
     if "key_numbers" in label:
         return [n for k in label["key_numbers"] for n in _numbers(k)]
     return _numbers(_gold_list(label)[0]) if "gold" in label else []
-
-
-def _unsourced_numbers(answer: str, ex: list[dict]) -> list[str]:
-    """Numbers the answer states that no excerpt states (to the answer's precision)."""
-    src = "\n".join(e["text"] for e in ex)
-    return [n[3].strip() for n in _numbers(answer) if not _has_number(n, src)]
 
 
 def _gold_hit(label: dict, answer: str) -> bool:
