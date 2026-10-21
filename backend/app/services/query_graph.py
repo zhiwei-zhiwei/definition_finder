@@ -1,7 +1,12 @@
 """The /query pipeline as a LangGraph state graph.
 
-    START -(not prepared)-> prepare -> retrieve -> consolidate -(evidence)-> summarize -> verify -> finalize -> END
-          -(prepared)-----------------^                  -(none)---> insufficient ----------^
+    START -(not prepared)-> prepare -> retrieve -> consolidate -(evidence)-> summarize -> verify -> finalize -(ok)-> END
+          -(prepared)-----------------^   ^              -(none)---> insufficient ----------^    |
+                                          +------------ retry (top_k x2) -- review <-(flagged)--+
+                                                                              +-- accept --> finalize
+
+A flagged answer pauses the run in `review` (LangGraph `interrupt()`) until a human
+accepts it or asks for a retry with more passages (POST /query/resume).
 
 Every SSE event the route streams (except done/error) is written by a node via
 `writer`, and the route relays them with `astream(stream_mode="custom")`. Sync nodes
@@ -14,6 +19,7 @@ Each run is a checkpointed thread keyed by its query id (the app swaps in a SQLi
 checkpointer at startup, see `checkpointed`). Checkpoints are written only when a run
 exits (`durability="exit"`) and deleted by `run` unless the run is paused.
 """
+# ponytail: two resumes of one paused run at once both execute; the UI sends one at a time
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -24,7 +30,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import StreamWriter
+from langgraph.types import Command, StreamWriter, interrupt
 
 from app.config import settings
 from app.models.db import SessionLocal
@@ -40,6 +46,7 @@ from app.utils.sse import sse_event
 log = logging.getLogger(__name__)
 
 NO_CONTEXT = "No relevant context was found in this document."
+MAX_TOP_K = 50  # matches QueryRequest.top_k's bound
 
 
 class Excerpt(TypedDict):
@@ -67,6 +74,7 @@ class QueryState(QueryInput, total=False):
     snippets: list[dict]
     answer: str
     verification: dict  # verify.check(): status ok | warning | insufficient_evidence, issues, needs_review
+    review: str  # "accepted" once a human has accepted a flagged answer
 
 
 def _route_start(state: QueryState) -> str:
@@ -159,8 +167,27 @@ def verify(state: QueryState, writer: StreamWriter) -> dict:
     return {"verification": result}
 
 
+def _route_review(state: QueryState) -> str:
+    """Flagged answers wait for a human. The evidence gate's fallback doesn't: more passages
+    can't raise the doc's best cosine, so there is nothing to retry."""
+    v = state["verification"]
+    gated = any(i["kind"] == "low_evidence" for i in v["issues"])
+    return "review" if v["needs_review"] and not gated and state.get("review") != "accepted" else END
+
+
+def review(state: QueryState) -> Command:
+    """Pause until POST /query/resume. On resume LangGraph re-runs this node from the top
+    and interrupt() returns the human's decision, so nothing before it may have effects."""
+    can_retry = state["top_k"] < MAX_TOP_K
+    decision = interrupt({"can_retry": can_retry, "top_k": state["top_k"]})
+    if decision == "retry" and can_retry:
+        return Command(goto="retrieve", update={"top_k": min(state["top_k"] * 2, MAX_TOP_K)})
+    return Command(goto="finalize", update={"review": "accepted"})
+
+
 def finalize(state: QueryState) -> dict:
-    """Cache the result for the signed-in user's Queries tab; a failed cache never fails the query."""
+    """Cache the result for the signed-in user's Queries tab; a failed cache never fails the query.
+    Runs again after a retry or an accept, overwriting the same row."""
     if state["user_id"] is not None:
         try:
             _persist_query(state)
@@ -181,7 +208,7 @@ def _extract_key_takeaway(text: str) -> str | None:
 
 def _persist_query(state: QueryState) -> None:
     with SessionLocal() as db:
-        db.add(Query(
+        db.merge(Query(
             id=state["query_id"],
             user_id=state["user_id"],
             doc_id=state["doc_id"],
@@ -199,6 +226,7 @@ def _build() -> StateGraph:
     g = StateGraph(QueryState, input_schema=QueryInput)
     for node in (prepare, retrieve, consolidate, summarize, insufficient, verify, finalize):
         g.add_node(node.__name__, node)
+    g.add_node("review", review, destinations=("retrieve", "finalize"))
     g.add_conditional_edges(START, _route_start, ["prepare", "retrieve"])
     g.add_edge("prepare", "retrieve")
     g.add_edge("retrieve", "consolidate")
@@ -206,7 +234,7 @@ def _build() -> StateGraph:
     g.add_edge("summarize", "verify")
     g.add_edge("verify", "finalize")
     g.add_edge("insufficient", "finalize")
-    g.add_edge("finalize", END)
+    g.add_conditional_edges("finalize", _route_review, ["review", END])
     return g
 
 
@@ -228,11 +256,22 @@ async def checkpointed():
 
 
 async def run(graph_input, query_id: str):
-    """Relay one run's SSE events; drop its checkpoints unless it is paused."""
+    """Relay one run's SSE events; drop its checkpoints unless it is paused. A pause
+    becomes a `review` event carrying the interrupt's payload and the id to resume."""
     config = {"configurable": {"thread_id": query_id}}
     try:
-        async for event in graph.astream(graph_input, config, stream_mode="custom", durability="exit"):
-            yield event
+        async for mode, chunk in graph.astream(graph_input, config, stream_mode=["custom", "updates"],
+                                               durability="exit"):
+            if mode == "custom":
+                yield chunk
+            elif "__interrupt__" in chunk:
+                yield sse_event("review", {"query_id": query_id, **chunk["__interrupt__"][0].value})
     finally:
         if not (await graph.aget_state(config)).interrupts:
             await graph.checkpointer.adelete_thread(query_id)
+
+
+async def paused(query_id: str) -> dict | None:
+    """State of a run waiting in `review`, or None (finished, expired, never existed)."""
+    snap = await graph.aget_state({"configurable": {"thread_id": query_id}})
+    return snap.values if snap.interrupts else None

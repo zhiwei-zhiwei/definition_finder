@@ -1,7 +1,9 @@
 import logging
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
@@ -31,18 +33,38 @@ async def query_stream(
     return EventSourceResponse(_query_stream(req, user_id), ping=15)
 
 
+class ResumeRequest(BaseModel):
+    query_id: str
+    action: Literal["accept", "retry"]
+
+
+@router.post("/query/resume")
+async def resume_stream(
+    req: ResumeRequest,
+    user: User | None = Depends(get_current_user_optional),
+):
+    """Continue a run paused for review (the `review` SSE event's query_id)."""
+    user_id = user.id if user is not None else None
+    return EventSourceResponse(_resume_stream(req, user_id), ping=15)
+
+
+def _doc_error(doc_id: str, user_id: str | None) -> str | None:
+    with SessionLocal() as db:
+        doc = db.get(Document, doc_id)
+        if doc is None:
+            return "document not found"
+        # Owned docs may only be queried by their owner; anon (unclaimed)
+        # docs stay open to whoever holds the id until claimed on sign-in.
+        if doc.user_id is not None and doc.user_id != user_id:
+            return "forbidden"
+    return None
+
+
 async def _query_stream(req: QueryRequest, user_id: str | None):
     try:
-        with SessionLocal() as db:
-            doc = db.get(Document, req.doc_id)
-            if doc is None:
-                yield sse_event("error", {"message": "document not found"})
-                return
-            # Owned docs may only be queried by their owner; anon (unclaimed)
-            # docs stay open to whoever holds the id until claimed on sign-in.
-            if doc.user_id is not None and doc.user_id != user_id:
-                yield sse_event("error", {"message": "forbidden"})
-                return
+        if err := _doc_error(req.doc_id, user_id):
+            yield sse_event("error", {"message": err})
+            return
 
         query_id = uuid.uuid4().hex
         state = {"query_id": query_id, "doc_id": req.doc_id, "query": req.query, "top_k": req.top_k,
@@ -54,3 +76,21 @@ async def _query_stream(req: QueryRequest, user_id: str | None):
         log.exception("Query failed")
         yield sse_event("error", {"message": str(exc)})
 
+
+
+async def _resume_stream(req: ResumeRequest, user_id: str | None):
+    try:
+        # Only the user who ran it may resume; an anon run's id is its capability, like an anon doc's.
+        state = await query_graph.paused(req.query_id)
+        if state is None or state["user_id"] != user_id:
+            yield sse_event("error", {"message": "nothing to review"})
+            return
+        if err := _doc_error(state["doc_id"], user_id):
+            yield sse_event("error", {"message": err})
+            return
+        async for event in query_graph.run(Command(resume=req.action), req.query_id):
+            yield event
+        yield sse_event("done", {})
+    except Exception as exc:
+        log.exception("Resume failed")
+        yield sse_event("error", {"message": str(exc)})
