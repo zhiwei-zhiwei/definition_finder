@@ -1,8 +1,9 @@
 """Groundedness / citation eval — does the summary stick to what retrieval handed it?
 
-Runs the app's real answer path per labelled query (hybrid search -> consolidate ->
-parent texts -> summarize) and has a stronger LLM judge split each answer into claims
-and check every claim (and its page citation) against the excerpts the answer model saw.
+Runs every labelled query through the app's own query graph (services/query_graph.py:
+retrieve -> consolidate -> evidence gate -> summarize -> verify, exactly what POST /query
+runs) and has a stronger LLM judge split each answer into claims and check every claim (and
+its page citation) against the excerpts the answer model saw.
 
 Usage (from backend/, venv active, OPENAI_API_KEY in .env):
 
@@ -42,14 +43,14 @@ import json
 import re
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+import uuid
 from pathlib import Path
 
 import numpy as np
 
 from app.config import settings
-from app.models.db import SessionLocal, init_db
-from app.services import retrieve, summarize
+from app.models.db import init_db
+from app.services import query_graph, summarize
 from app.services.verify import cited_pages as _cited_pages
 from app.services.verify import fake_pages as _fake_pages
 from app.services.verify import has_number as _has_number
@@ -80,23 +81,23 @@ contain the requested information, else false.
 
 Respond with JSON only: {"claims": [...], "abstained": true|false}"""
 
-_NO_CONTEXT = "No relevant context was found in this document."  # same fallback as services/query_graph.py
+async def _run_graph(doc_id: str, query: str, top_k: int, answer: bool = True) -> dict:
+    """One query through the app's query graph; its final state (or the state where it paused
+    for review). answer=False stops before the summarizer, for re-judging stored answers."""
+    qid = uuid.uuid4().hex
+    config = {"configurable": {"thread_id": qid}}
+    graph = query_graph.graph  # module default: in-memory checkpoints, nothing written to disk
+    try:
+        await graph.ainvoke({"query_id": qid, "doc_id": doc_id, "query": query, "top_k": top_k, "user_id": None},
+                            config, durability="exit", interrupt_before=None if answer else ["summarize"])
+        return (await graph.aget_state(config)).values
+    finally:
+        await graph.checkpointer.adelete_thread(qid)
 
 
-def _answer_inputs(db, doc_id: str, label: dict, top_k: int) -> list[dict]:
-    """The excerpts the app would summarize for this query (same steps as routes/query.py)."""
-    q = label["query"]
-    hits = retrieve.hybrid_search(db, doc_id, retrieve.embed_query(q), q, top_k)
-    winners, _ = retrieve.consolidate(hits, settings.PARENT_CONSOLIDATION_THRESHOLD)
-    return [{"text": p.text, "marked": p.marked_text or p.text,
-             "page_start": p.page_start, "page_end": p.page_end or p.page_start}
-            for p in retrieve.fetch_parent_texts(db, winners)]
-
-
-def _summarize(query: str, ex: list[dict]) -> str:
-    if not ex:
-        return _NO_CONTEXT
-    return "".join(summarize.summarize_stream(query, [e["marked"] for e in ex], [e["page_start"] for e in ex]))
+def _excerpts(state: dict) -> list[dict]:
+    # Single-page parents store page_end NULL; the report's page spans want both ends.
+    return [{**e, "page_end": e["page_end"] or e["page_start"]} for e in state["excerpts"]]
 
 
 def _span(e: dict) -> str:
@@ -281,6 +282,22 @@ def _log_mlflow(args, params: dict, summ: dict, per_rep: list[dict], recs: list[
     print(f"\nlogged to MLflow: experiment '{args.experiment}', run {run.info.run_id}")
 
 
+async def _run_all(args, labels: list[dict], doc_id: str, old: dict) -> list[dict]:
+    """Every (rep, label) through the graph, then the judge; --workers at a time."""
+    sem = asyncio.Semaphore(args.workers)
+
+    async def one(rep: int, lab: dict) -> dict:
+        q = lab["query"]
+        async with sem:
+            state = await _run_graph(doc_id, q, args.top_k, answer=not old)
+            answer = old[(rep, q)] if old else state["answer"]
+            ex = _excerpts(state)
+            claims, abstained = await asyncio.to_thread(_judge, q, ex, answer, args.judge_model)
+        return _grade(lab, rep, ex, answer, claims, abstained)
+
+    return await asyncio.gather(*(one(rep, lab) for rep in range(args.reps) for lab in labels))
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pdf", required=True, type=Path)
@@ -313,18 +330,6 @@ def main() -> None:
     print(f"{len(labels)} queries x {args.reps} reps; top_k={args.top_k}, answer={settings.CHAT_MODEL}, "
           f"judge={args.judge_model}, contextual={settings.CONTEXTUAL_EMBEDDINGS}")
 
-    # Retrieval is deterministic, so it runs once; only summary + judge repeat per rep.
-    doc_id = _ingest_doc(args.pdf)
-    try:
-        t0 = time.perf_counter()
-        asyncio.run(_prepare(doc_id))
-        prep_s = time.perf_counter() - t0
-        with SessionLocal() as db:
-            excerpts = [_answer_inputs(db, doc_id, lab, args.top_k) for lab in labels]
-    finally:
-        _cleanup(doc_id, args.pdf.suffix)
-    print(f"prepared in {prep_s:.0f}s; summarizing + judging…")
-
     old = {}
     if args.rejudge:
         import mlflow
@@ -335,14 +340,15 @@ def main() -> None:
                                             for row in t["data"])}
         args.reps = 1 + max(rep for rep, _ in old)
 
-    def run(job: tuple[int, int]) -> dict:
-        rep, i = job
-        q, ex = labels[i]["query"], excerpts[i]
-        answer = old[(rep, q)] if old else _summarize(q, ex)
-        return _grade(labels[i], rep, ex, answer, *_judge(q, ex, answer, args.judge_model))
-
-    with ThreadPoolExecutor(args.workers) as pool:
-        recs = list(pool.map(run, [(rep, i) for rep in range(args.reps) for i in range(len(labels))]))
+    doc_id = _ingest_doc(args.pdf)
+    try:
+        t0 = time.perf_counter()
+        asyncio.run(_prepare(doc_id))
+        prep_s = time.perf_counter() - t0
+        print(f"prepared in {prep_s:.0f}s; answering + judging…")
+        recs = asyncio.run(_run_all(args, labels, doc_id, old))
+    finally:
+        _cleanup(doc_id, args.pdf.suffix)
 
     per_rep = [_metrics([r for r in recs if r["rep"] == k]) for k in range(args.reps)]
     summ = {}

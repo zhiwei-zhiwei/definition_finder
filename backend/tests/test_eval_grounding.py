@@ -1,9 +1,15 @@
-"""Offline checks for the grounding eval: citation parsing and metric maths (no LLM)."""
+"""Offline checks for the grounding eval: citation parsing, metric maths and its answer
+path (the app's query graph, with stubbed retrieval and LLM)."""
+import asyncio
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+
+from app.services import prepare, query_graph, retrieve, summarize, vectorstore
+from app.services.retrieve import Hit
 
 _SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 _spec = importlib.util.spec_from_file_location("eval_grounding", _SCRIPTS / "eval_grounding.py")
@@ -91,3 +97,28 @@ def test_frozen_failures_keep_their_verdict(case):
     each the failures a human checked. A flip means a scorer change, intended or not."""
     rec = g._grade(case["label"], case["rep"], case["excerpts"], case["answer"], case["claims"], case["abstained"])
     assert rec["failures"] == case["failures"], case["note"]
+
+
+def test_answers_come_from_the_query_graph(monkeypatch):
+    monkeypatch.setattr(prepare, "has_chunks", lambda _id: True)
+    monkeypatch.setattr(retrieve, "embed_query", lambda _q: [0.0])
+    monkeypatch.setattr(vectorstore, "search", lambda *a: [("c1", 0.6)])
+    monkeypatch.setattr(retrieve, "hybrid_search", lambda *a: [Hit("c1", "p1", "Rent is $5.", 1.0, 3, None, [], None)])
+    monkeypatch.setattr(retrieve, "enrich_hits_from_db", lambda db, hits: hits)
+    monkeypatch.setattr(retrieve, "fetch_parent_texts", lambda db, ids: [
+        SimpleNamespace(text="Rent is $5.", marked_text="[page 3] Rent is $5.", page_start=3, page_end=None)])
+    monkeypatch.setattr(summarize, "summarize_stream", lambda *a: iter(["Rent is $5 (page 3)."]))
+    state = asyncio.run(g._run_graph("doc", "What is the rent?", 5))
+    assert state["answer"] == "Rent is $5 (page 3)." and state["verification"]["status"] == "ok"
+    assert g._excerpts(state)[0]["page_end"] == 3  # single-page parent: NULL end filled in
+
+    def no_llm(*a):
+        raise AssertionError("summarizer called")
+
+    monkeypatch.setattr(summarize, "summarize_stream", no_llm)
+    # Re-judging stored answers stops before the summarizer...
+    state = asyncio.run(g._run_graph("doc", "What is the rent?", 5, answer=False))
+    assert "answer" not in state and state["excerpts"]
+    # ...and the evidence gate answers off-topic queries without it, as in the app.
+    monkeypatch.setattr(vectorstore, "search", lambda *a: [("c1", 0.01)])
+    assert asyncio.run(g._run_graph("doc", "AMD revenue?", 5))["answer"] == query_graph.NO_CONTEXT
