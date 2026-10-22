@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     EMBED_MODEL: str = "text-embedding-3-large"
     CHAT_MODEL: str = "gpt-4.1-mini"
+    # Seconds the query path's OpenAI calls (embed, summarize) may wait on a read before
+    # giving up; the SDK default is 600. A streamed answer waits per chunk, not in total.
+    OPENAI_TIMEOUT: float = 30.0
     # Optional Matryoshka truncation (OpenAI `dimensions`). None = model default
     # (3072 for text-embedding-3-large). Lower = smaller BLOBs / faster cosine,
     # at some recall cost. Query + stored vectors share this, so they stay aligned.

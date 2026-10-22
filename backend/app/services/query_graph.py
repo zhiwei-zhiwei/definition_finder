@@ -26,11 +26,13 @@ from contextlib import asynccontextmanager
 from typing import TypedDict
 
 import aiosqlite
+import httpx
+import openai
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command, StreamWriter, interrupt
+from langgraph.types import Command, RetryPolicy, StreamWriter, interrupt
 
 from app.config import settings
 from app.models.db import SessionLocal
@@ -227,10 +229,25 @@ def _persist_query(state: QueryState) -> None:
         db.commit()
 
 
+def _transient(exc: Exception) -> bool:
+    """Worth another attempt: the network or OpenAI hiccupped. Not a 4xx (a bad key or
+    request fails the same way again) and not our own bugs."""
+    return isinstance(exc, (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError,
+                            httpx.TransportError))
+
+
+# The SDK already retries each request (honouring 429 Retry-After); this re-runs the node for
+# what it can't: a stream dropped mid-answer, or a failure that outlasted its retries.
+_RETRY = RetryPolicy(max_attempts=2, initial_interval=0.5, retry_on=_transient)
+
+
 def _build() -> StateGraph:
     g = StateGraph(QueryState, input_schema=QueryInput)
-    for node in (prepare, retrieve, consolidate, summarize, insufficient, verify, finalize):
+    for node in (prepare, consolidate, insufficient, verify, finalize):
         g.add_node(node.__name__, node)
+    # Not prepare: a re-run deletes the doc's chunks and pays for every embedding again.
+    for node in (retrieve, summarize):
+        g.add_node(node.__name__, node, retry_policy=_RETRY)
     g.add_node("review", review, destinations=("retrieve", "finalize"))
     g.add_conditional_edges(START, _route_start, ["prepare", "retrieve"])
     g.add_edge("prepare", "retrieve")

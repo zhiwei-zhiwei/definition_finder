@@ -1,16 +1,19 @@
 """POST /query streams every stage from the query graph, in the order the frontend expects;
-flagged answers pause for review until POST /query/resume."""
+flagged answers pause for review until POST /query/resume; transient failures are retried."""
 import json
 import sqlite3
 import uuid
 from types import SimpleNamespace
 
+import httpx
+import openai
 import pytest
 
 from app.config import settings
 from app.models.db import SessionLocal
 from app.models.schema import Document
 from app.services import prepare, retrieve, summarize, vectorstore
+from app.services.query_graph import _transient
 from app.services.retrieve import Hit
 from app.utils.sse import sse_event
 
@@ -59,6 +62,31 @@ def stubs(monkeypatch):
         SimpleNamespace(text="the term", marked_text="[page 3] the term", page_start=3, page_end=3)])
     monkeypatch.setattr(summarize, "summarize_stream", lambda *a: iter(["It is", " 5 years."]))
     return monkeypatch
+
+
+@pytest.fixture
+def flaky(monkeypatch):
+    """flaky(module, name, exc, fails): the function raises `exc` on its first `fails` calls,
+    then calls through. Returns its call log, so a test can tell whether a node re-ran."""
+    def make(module, name, exc, fails=1):
+        real, calls = getattr(module, name), []
+
+        def wrapper(*a, **kw):
+            calls.append(a)
+            if len(calls) <= fails:
+                raise exc
+            return real(*a, **kw)
+
+        monkeypatch.setattr(module, name, wrapper)
+        return calls
+    return make
+
+
+_REQ = httpx.Request("POST", "https://api.openai.com/v1")
+
+
+def _api_error(cls, code):
+    return cls("x", response=httpx.Response(code, request=_REQ), body=None)
 
 
 @pytest.mark.parametrize("prepared", [True, False])
@@ -229,3 +257,51 @@ def test_signed_in_query_caches_its_verification(client, stubs, make_user, beare
     assert row["review_status"] == "accepted"
     cached = client.get(f"/queries/{row['id']}", headers=bearer(jwt)).json()
     assert cached["review"] is None and cached["review_status"] == "accepted"
+
+
+def test_only_transient_errors_are_retried():
+    assert all(map(_transient, [openai.APIConnectionError(request=_REQ), openai.APITimeoutError(_REQ),
+                                _api_error(openai.RateLimitError, 429), _api_error(openai.InternalServerError, 500),
+                                httpx.RemoteProtocolError("peer closed connection")]))
+    # A bad key or request fails the same way again; so does a bug of ours.
+    assert not any(map(_transient, [_api_error(openai.AuthenticationError, 401),
+                                    _api_error(openai.BadRequestError, 400), RuntimeError("bug"), KeyError("x")]))
+
+
+def test_transient_failure_is_retried_inside_the_run(client, doc_id, stubs, flaky):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
+    calls = flaky(retrieve, "hybrid_search", openai.APIConnectionError(request=_REQ))
+    r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    assert len(calls) == 2
+    # The retried node streams its stages again, then the run carries on as usual.
+    assert _events(r.text) == ["stage:embedding_query", "stage:searching"] + QUERY_EVENTS[:6] + [
+        "token", "token", "stage:verifying", "verification", "done"]
+
+
+def test_stream_dropped_mid_answer_is_retried(client, doc_id, stubs):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    attempts = []
+
+    def stream(*a):
+        attempts.append(1)
+        yield GROUNDED[0]
+        if len(attempts) == 1:
+            raise httpx.RemoteProtocolError("peer closed connection")
+        yield GROUNDED[1]
+
+    stubs.setattr(summarize, "summarize_stream", stream)
+    r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    # The half answer's token was already sent; the retry restarts at stage:summarizing,
+    # which is where the frontend clears the answer.
+    assert _events(r.text) == QUERY_EVENTS[:6] + ["token", "snippets", "stage:summarizing", "token", "token",
+                                                  "stage:verifying", "verification", "done"]
+    assert _data(r.text, "verification")["status"] == "ok"
+
+
+def test_permanent_failure_is_not_retried(client, doc_id, stubs, flaky):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    calls = flaky(retrieve, "hybrid_search", _api_error(openai.AuthenticationError, 401))
+    r = client.post("/query", json={"doc_id": doc_id, "query": "q"})
+    assert len(calls) == 1
+    assert _events(r.text) == ["stage:embedding_query", "stage:searching", "error"]
