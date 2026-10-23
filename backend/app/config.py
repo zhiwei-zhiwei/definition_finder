@@ -57,6 +57,11 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:3000"
 
+    # OpenTelemetry: OTLP/HTTP base URL of a collector (e.g. http://localhost:4318); empty = export
+    # nothing. Read here, not by the SDK from the environment: backend/.env never reaches os.environ.
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    OTEL_SERVICE_NAME: str = "lexisai-backend"
+
     # Dev default — RFC 7518 wants ≥32 bytes for HS256. Override via env in prod.
     JWT_SECRET: str = "dev-only-not-secret-change-me-please-32b"
     JWT_ALG: str = "HS256"

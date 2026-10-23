@@ -3,11 +3,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from app.config import settings
 from app.models.db import init_db
 from app.routes import auth, documents, health, queries, query
-from app.services import query_graph
+from app.services import query_graph, telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -17,9 +18,14 @@ async def lifespan(_app: FastAPI):
     init_db()
     async with query_graph.checkpointed():
         yield
+    telemetry.shutdown()
 
 
+telemetry.setup()
 app = FastAPI(title="LexisAI Architect API", version="0.1.0", lifespan=lifespan)
+# One server span + http.server.* metrics per request. No span per ASGI send: an answer
+# streams one SSE token per send, hundreds per query.
+FastAPIInstrumentor.instrument_app(app, excluded_urls="/health", exclude_spans=["send", "receive"])
 
 app.add_middleware(
     CORSMiddleware,

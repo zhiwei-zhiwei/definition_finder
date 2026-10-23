@@ -28,6 +28,9 @@ dependencies = [
     "torch>=2.2",
     "torchvision>=0.17",
     "langgraph-checkpoint-sqlite>=3",
+    "opentelemetry-sdk>=1.45",
+    "opentelemetry-exporter-otlp-proto-http>=1.45",
+    "opentelemetry-instrumentation-fastapi>=0.66b1",
 ]
 
 [project.optional-dependencies]

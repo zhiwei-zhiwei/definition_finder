@@ -11,11 +11,27 @@ os.environ["EMAIL_BACKEND"] = "console"
 os.environ["JWT_SECRET"] = "test-secret-test-secret-test-secret-0123"
 os.environ["OPENAI_API_KEY"] = "test-key-not-used"
 os.environ["FRONTEND_URL"] = "http://localhost:3000"
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = ""  # never export, whatever backend/.env says
 
 import re  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
+from opentelemetry import metrics, trace  # noqa: E402
+from opentelemetry.sdk.metrics import MeterProvider  # noqa: E402
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter  # noqa: E402
+
+# Global providers can be set once per process, so the in-memory ones go in before the app
+# is imported and every test reads from them.
+_SPANS = InMemorySpanExporter()
+_tp = TracerProvider()
+_tp.add_span_processor(SimpleSpanProcessor(_SPANS))
+trace.set_tracer_provider(_tp)
+_METRICS = InMemoryMetricReader()
+metrics.set_meter_provider(MeterProvider(metric_readers=[_METRICS]))
 
 from app.main import app  # noqa: E402
 from app.services import email as email_svc  # noqa: E402
@@ -26,6 +42,23 @@ def client():
     # Context-manager form fires startup events (init_db -> tables + migration).
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def spans():
+    """The spans finished during this test."""
+    _SPANS.clear()
+    return _SPANS
+
+
+@pytest.fixture
+def otel_metrics():
+    """Reads every metric point recorded so far (cumulative: compare before and after)."""
+    def read() -> dict:
+        data = _METRICS.get_metrics_data()
+        return {m.name: m for rm in data.resource_metrics for sm in rm.scope_metrics
+                for m in sm.metrics} if data else {}
+    return read
 
 
 def _extract_token() -> str:
