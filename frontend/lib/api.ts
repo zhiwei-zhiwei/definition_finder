@@ -104,7 +104,8 @@ export type SseHandlers = {
   onVerification?: (v: Verification) => void;
   onReview?: (r: Review) => void;
   onDone?: (payload: any) => void;
-  onError?: (msg: string) => void;
+  /** queryId is set when the failed run can be recovered (resumeQuery "recover"). */
+  onError?: (msg: string, queryId?: string) => void;
 };
 
 /** Parse a ReadableStream of SSE bytes and invoke handlers. */
@@ -149,6 +150,7 @@ export async function consumeSSE(
       case "error":
         handlers.onError?.(
           typeof data === "string" ? data : (data?.message ?? "error"),
+          data?.query_id,
         );
         break;
     }
@@ -204,10 +206,11 @@ export async function runQuery(
   return consumeSSE(r, handlers);
 }
 
-/** Accept or reject a paused answer, or rerun it with more passages; streams like runQuery. */
+/** Accept or reject a paused answer, rerun it with more passages, or recover a failed run
+ * from its checkpoint; streams like runQuery. */
 export async function resumeQuery(
   queryId: string,
-  action: ReviewAction,
+  action: ReviewAction | "recover",
   handlers: SseHandlers,
 ) {
   const r = await fetch(`${API_BASE}/query/resume`, {

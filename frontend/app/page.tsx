@@ -42,6 +42,7 @@ export default function HomePage() {
   const [verdict, setVerdict] = useState<ReviewVerdict | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+  const [recoverId, setRecoverId] = useState<string | null>(null);
   const [queriesRefreshKey, setQueriesRefreshKey] = useState(0);
 
   // Clear the panels before a run that streams a fresh answer.
@@ -55,6 +56,7 @@ export default function HomePage() {
     setReview(null);
     setVerdict(null);
     setQueryError(null);
+    setRecoverId(null);
   }
 
   function streamHandlers(): SseHandlers {
@@ -62,6 +64,8 @@ export default function HomePage() {
     return {
       onStage: (payload) => {
         if (payload.stage === "extracting") prepared = true;
+        // A retried or recovered summarize streams the whole answer again.
+        if (payload.stage === "summarizing") setSummary("");
         setStage(payload.stage);
         setStagePayload(payload);
       },
@@ -75,8 +79,9 @@ export default function HomePage() {
         setStage("done");
         setQueriesRefreshKey((k) => k + 1);
       },
-      onError: (msg) => {
+      onError: (msg, queryId) => {
         setQueryError(msg);
+        setRecoverId(queryId ?? null);
         setStreaming(false);
       },
     };
@@ -108,7 +113,18 @@ export default function HomePage() {
     });
   }
 
+  // Continue a failed run from its last checkpoint; what it already streamed stays on screen.
+  async function onRecover() {
+    if (!recoverId) return;
+    const id = recoverId;
+    setRecoverId(null);
+    setQueryError(null);
+    setStreaming(true);
+    await resumeQuery(id, "recover", streamHandlers());
+  }
+
   async function onSelectQuery(queryId: string) {
+    setRecoverId(null);
     try {
       const cached = await getQuery(queryId);
       // Make sure the active doc matches the cached query's doc.
@@ -145,6 +161,7 @@ export default function HomePage() {
     setStagePayload(null);
     setPageTarget(null);
     setQueryError(null);
+    setRecoverId(null);
     setStreaming(false);
     clearAnonDocId();
   }
@@ -217,6 +234,14 @@ export default function HomePage() {
           {queryError && (
             <div className="text-sm text-error bg-error-container/40 rounded-lg p-3">
               {queryError}
+              {recoverId && !streaming && (
+                <button
+                  className="ml-2 px-2 py-1 rounded bg-surface-container-lowest/70 font-semibold hover:bg-surface-container-lowest"
+                  onClick={onRecover}
+                >
+                  Continue
+                </button>
+              )}
             </div>
           )}
           <SummaryCard
