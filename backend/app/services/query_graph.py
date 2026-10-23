@@ -16,13 +16,16 @@ parameter rather than fetched with `get_stream_writer()`, which async nodes can'
 reach on Python < 3.11.
 
 Each run is a checkpointed thread keyed by its query id (the app swaps in a SQLite
-checkpointer at startup, see `checkpointed`). Checkpoints are written only when a run
-exits (`durability="exit"`) and deleted by `run` unless the run is paused.
+checkpointer at startup, see `checkpointed`). A checkpoint is written after every step
+(`durability="sync"`), and `run` deletes the thread once the run finishes. A paused run
+waits for review; a failed (or cut-off) one can be recovered: it continues from the
+failed node, without re-running the nodes before it.
 """
 # ponytail: two resumes of one paused run at once both execute; the UI sends one at a time
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
 import aiosqlite
@@ -49,6 +52,7 @@ log = logging.getLogger(__name__)
 
 NO_CONTEXT = "No relevant context was found in this document."
 MAX_TOP_K = 50  # matches QueryRequest.top_k's bound
+STALE_RUN = timedelta(hours=24)  # unfinished runs nobody recovered are dropped at startup after this
 
 
 class Excerpt(TypedDict):
@@ -274,22 +278,36 @@ async def checkpointed():
         saver = AsyncSqliteSaver(conn, serde=_SERDE)
         await saver.setup()
         graph = _BUILDER.compile(checkpointer=saver)
+        await sweep(STALE_RUN)
         yield
 
 
+async def sweep(older_than: timedelta) -> None:
+    """Drop runs that failed or were cut off and weren't recovered in time. Paused runs
+    stay: they wait for a human, however long that takes."""
+    cutoff = datetime.now(timezone.utc) - older_than
+    async with graph.checkpointer.conn.execute("SELECT DISTINCT thread_id FROM checkpoints") as cur:
+        threads = [row[0] for row in await cur.fetchall()]
+    for thread_id in threads:
+        snap = await graph.aget_state({"configurable": {"thread_id": thread_id}})
+        if not snap.interrupts and datetime.fromisoformat(snap.created_at) < cutoff:
+            await graph.checkpointer.adelete_thread(thread_id)
+
+
 async def run(graph_input, query_id: str):
-    """Relay one run's SSE events; drop its checkpoints unless it is paused. A pause
-    becomes a `review` event carrying the interrupt's payload and the id to resume."""
+    """Relay one run's SSE events; drop its checkpoints once it has finished. A pause
+    becomes a `review` event carrying the interrupt's payload and the id to resume. A
+    failed run keeps them (its last checkpoint is just before the failed node)."""
     config = {"configurable": {"thread_id": query_id}}
     try:
         async for mode, chunk in graph.astream(graph_input, config, stream_mode=["custom", "updates"],
-                                               durability="exit"):
+                                               durability="sync"):
             if mode == "custom":
                 yield chunk
             elif "__interrupt__" in chunk:
                 yield sse_event("review", {"query_id": query_id, **chunk["__interrupt__"][0].value})
     finally:
-        if not (await graph.aget_state(config)).interrupts:
+        if not (await graph.aget_state(config)).next:
             await graph.checkpointer.adelete_thread(query_id)
 
 
@@ -297,3 +315,10 @@ async def paused(query_id: str) -> dict | None:
     """State of a run waiting in `review`, or None (finished, expired, never existed)."""
     snap = await graph.aget_state({"configurable": {"thread_id": query_id}})
     return snap.values if snap.interrupts else None
+
+
+async def recoverable(query_id: str) -> dict | None:
+    """State of a run that failed or was cut off before finishing (not paused), or None.
+    Running it again with no input continues from the node that failed."""
+    snap = await graph.aget_state({"configurable": {"thread_id": query_id}})
+    return snap.values if snap.next and not snap.interrupts else None

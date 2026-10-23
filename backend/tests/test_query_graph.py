@@ -1,8 +1,10 @@
 """POST /query streams every stage from the query graph, in the order the frontend expects;
-flagged answers pause for review until POST /query/resume; transient failures are retried."""
+flagged answers pause for review until POST /query/resume; transient failures are retried,
+and a run that still fails can be recovered from its checkpoint."""
 import json
 import sqlite3
 import uuid
+from datetime import timedelta
 from types import SimpleNamespace
 
 import httpx
@@ -12,7 +14,7 @@ import pytest
 from app.config import settings
 from app.models.db import SessionLocal
 from app.models.schema import Document
-from app.services import prepare, retrieve, summarize, vectorstore
+from app.services import prepare, query_graph, retrieve, summarize, vectorstore
 from app.services.query_graph import _transient
 from app.services.retrieve import Hit
 from app.utils.sse import sse_event
@@ -99,8 +101,9 @@ def test_query_streams_graph_events_in_order(client, doc_id, stubs, prepared):
 
 
 def _checkpoints() -> int:
+    """Runs (threads) with checkpoints, read from the file itself: what survives a restart."""
     with sqlite3.connect(settings.CHECKPOINT_DB) as c:
-        return c.execute("SELECT count(*) FROM checkpoints").fetchone()[0]
+        return c.execute("SELECT count(DISTINCT thread_id) FROM checkpoints").fetchone()[0]
 
 
 def test_finished_runs_leave_no_checkpoints(client, doc_id, stubs):
@@ -305,3 +308,80 @@ def test_permanent_failure_is_not_retried(client, doc_id, stubs, flaky):
     r = client.post("/query", json={"doc_id": doc_id, "query": "q"})
     assert len(calls) == 1
     assert _events(r.text) == ["stage:embedding_query", "stage:searching", "error"]
+
+
+def test_failed_run_recovers_from_its_checkpoint(client, doc_id, stubs, flaky):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
+    searches = flaky(retrieve, "hybrid_search", None, fails=0)  # just counts
+    answers = flaky(summarize, "summarize_stream", openai.APIConnectionError(request=_REQ), fails=2)
+    before = _checkpoints()
+    r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    # Both attempts failed: the run stops at summarize and stays on disk, named in the error.
+    assert _events(r.text) == QUERY_EVENTS[:6] + QUERY_EVENTS[4:6] + ["error"]
+    qid = _data(r.text, "error")["query_id"]
+    assert _checkpoints() == before + 1
+
+    r = client.post("/query/resume", json={"query_id": qid, "action": "recover"})
+    # It continues at the failed node; retrieve and consolidate don't run again.
+    assert _events(r.text) == QUERY_EVENTS[4:6] + ["token", "token", "stage:verifying", "verification", "done"]
+    assert len(searches) == 1 and len(answers) == 3
+    assert _checkpoints() == before
+    r = client.post("/query/resume", json={"query_id": qid, "action": "recover"})
+    assert "nothing to recover" in r.text
+
+
+def test_recover_and_review_only_reach_their_own_runs(client, stubs, make_user, bearer, flaky):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    _, jwt = make_user("recover@example.com", "recoveruser")
+    uid = client.get("/auth/me", headers=bearer(jwt)).json()["user_id"]
+    did = uuid.uuid4().hex
+    with SessionLocal() as db:
+        db.add(Document(id=did, filename="x.pdf", mime="application/pdf", size_bytes=1, status="ready", user_id=uid))
+        db.commit()
+    flaky(retrieve, "hybrid_search", openai.APIConnectionError(request=_REQ), fails=2)
+    r = client.post("/query", json={"doc_id": did, "query": "q"}, headers=bearer(jwt))
+    failed = _data(r.text, "error")["query_id"]
+    r = client.post("/query", json={"doc_id": did, "query": "q"}, headers=bearer(jwt))
+    paused = _data(r.text, "review")["query_id"]
+    _, other = make_user("recover2@example.com", "recoveruser2")
+    for headers in (bearer(other), {}):
+        assert "nothing to recover" in client.post(
+            "/query/resume", json={"query_id": failed, "action": "recover"}, headers=headers).text
+    # A failed run isn't up for review, and a paused one isn't up for recovery.
+    assert "nothing to review" in client.post(
+        "/query/resume", json={"query_id": failed, "action": "accept"}, headers=bearer(jwt)).text
+    assert "nothing to recover" in client.post(
+        "/query/resume", json={"query_id": paused, "action": "recover"}, headers=bearer(jwt)).text
+    client.post("/query/resume", json={"query_id": paused, "action": "accept"}, headers=bearer(jwt))
+
+
+def test_sweep_drops_stale_failed_runs_but_not_paused_ones(client, doc_id, stubs, flaky):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    r = client.post("/query", json={"doc_id": doc_id, "query": "q"})
+    paused = _data(r.text, "review")["query_id"]
+    flaky(retrieve, "hybrid_search", openai.APIConnectionError(request=_REQ), fails=2)
+    r = client.post("/query", json={"doc_id": doc_id, "query": "q"})
+    failed = _data(r.text, "error")["query_id"]
+    before = _checkpoints()
+    # The sweep runs at startup; call it on the app's event loop, where its connection lives.
+    client.portal.call(query_graph.sweep, timedelta(hours=1))
+    assert _checkpoints() == before  # too recent to drop
+    client.portal.call(query_graph.sweep, timedelta(0))
+    assert "nothing to recover" in client.post("/query/resume", json={"query_id": failed, "action": "recover"}).text
+    assert _events(client.post("/query/resume", json={"query_id": paused, "action": "accept"}).text) == ["done"]
+
+
+def test_progress_is_on_disk_before_the_run_ends(client, doc_id, stubs):
+    """What survives a kill -9 mid-run: with durability="exit" nothing is written until the
+    run returns, so a killed process would leave nothing to recover."""
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    before, during = _checkpoints(), []
+
+    def stream(*a):
+        during.append(_checkpoints())
+        return iter(GROUNDED)
+
+    stubs.setattr(summarize, "summarize_stream", stream)
+    client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    assert during == [before + 1]

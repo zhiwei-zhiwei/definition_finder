@@ -35,7 +35,7 @@ async def query_stream(
 
 class ResumeRequest(BaseModel):
     query_id: str
-    action: Literal["accept", "reject", "retry"]
+    action: Literal["accept", "reject", "retry", "recover"]
 
 
 @router.post("/query/resume")
@@ -43,7 +43,8 @@ async def resume_stream(
     req: ResumeRequest,
     user: User | None = Depends(get_current_user_optional),
 ):
-    """Continue a run paused for review (the `review` SSE event's query_id)."""
+    """Continue a run paused for review (the `review` SSE event's query_id), or recover
+    one that failed (`recover`, with the `error` event's query_id)."""
     user_id = user.id if user is not None else None
     return EventSourceResponse(_resume_stream(req, user_id), ping=15)
 
@@ -60,7 +61,16 @@ def _doc_error(doc_id: str, user_id: str | None) -> str | None:
     return None
 
 
+async def _error(exc: Exception, query_id: str | None) -> str:
+    """The error event; it names the run when the run can be recovered."""
+    payload = {"message": str(exc)}
+    if query_id and await query_graph.recoverable(query_id) is not None:
+        payload["query_id"] = query_id
+    return sse_event("error", payload)
+
+
 async def _query_stream(req: QueryRequest, user_id: str | None):
+    query_id = None
     try:
         if err := _doc_error(req.doc_id, user_id):
             yield sse_event("error", {"message": err})
@@ -74,23 +84,25 @@ async def _query_stream(req: QueryRequest, user_id: str | None):
         yield sse_event("done", {})
     except Exception as exc:
         log.exception("Query failed")
-        yield sse_event("error", {"message": str(exc)})
+        yield await _error(exc, query_id)
 
 
 
 async def _resume_stream(req: ResumeRequest, user_id: str | None):
     try:
         # Only the user who ran it may resume; an anon run's id is its capability, like an anon doc's.
-        state = await query_graph.paused(req.query_id)
+        recover = req.action == "recover"
+        state = await (query_graph.recoverable if recover else query_graph.paused)(req.query_id)
         if state is None or state["user_id"] != user_id:
-            yield sse_event("error", {"message": "nothing to review"})
+            yield sse_event("error", {"message": "nothing to recover" if recover else "nothing to review"})
             return
         if err := _doc_error(state["doc_id"], user_id):
             yield sse_event("error", {"message": err})
             return
-        async for event in query_graph.run(Command(resume=req.action), req.query_id):
+        # No input continues a failed run from its last checkpoint.
+        async for event in query_graph.run(None if recover else Command(resume=req.action), req.query_id):
             yield event
         yield sse_event("done", {})
     except Exception as exc:
         log.exception("Resume failed")
-        yield sse_event("error", {"message": str(exc)})
+        yield await _error(exc, req.query_id)
