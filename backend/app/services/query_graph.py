@@ -20,11 +20,17 @@ checkpointer at startup, see `checkpointed`). A checkpoint is written after ever
 (`durability="sync"`), and `run` deletes the thread once the run finishes. A paused run
 waits for review; a failed (or cut-off) one can be recovered: it continues from the
 failed node, without re-running the nodes before it.
+
+Tracing: a run is a `query.run` span and every node attempt a `node.<name>` span under it
+(a retried node shows up twice, the first attempt red). Without an OTLP endpoint they cost
+next to nothing (see services/telemetry.py).
 """
 # ponytail: two resumes of one paused run at once both execute; the UI sends one at a time
+import functools
+import inspect
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
@@ -34,8 +40,11 @@ import openai
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from langgraph.errors import GraphBubbleUp
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, RetryPolicy, StreamWriter, interrupt
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 
 from app.config import settings
 from app.models.db import SessionLocal
@@ -46,6 +55,7 @@ from app.services import summarize as summarize_service
 from app.services import verify as verify_service
 from app.services import vectorstore
 from app.services.highlight import compute_spans
+from app.services.telemetry import tracer
 from app.utils.sse import sse_event
 
 log = logging.getLogger(__name__)
@@ -104,7 +114,10 @@ def retrieve(state: QueryState, writer: StreamWriter) -> dict:
         hits = retrieve_service.enrich_hits_from_db(db, hits)
         # ponytail: a second vector scan (~ms per doc); return it from hybrid_search if docs grow large
         best = vectorstore.search(db, state["doc_id"], qvec, 1)
-    return {"hits": hits, "top_cosine": best[0][1] if best else 0.0}
+    top_cosine = best[0][1] if best else 0.0
+    trace.get_current_span().set_attributes(
+        {"retrieval.top_k": state["top_k"], "retrieval.hits": len(hits), "retrieval.top_cosine": top_cosine})
+    return {"hits": hits, "top_cosine": top_cosine}
 
 
 def consolidate(state: QueryState, writer: StreamWriter) -> dict:
@@ -131,6 +144,7 @@ def consolidate(state: QueryState, writer: StreamWriter) -> dict:
         }
         for h in hits
     ]
+    trace.get_current_span().set_attribute("retrieval.excerpts", len(excerpts))
     # Sent by summarize, not here: when the evidence gate fires they are just the least-bad
     # passages of an unrelated doc, and the UI would show them as sources.
     return {"winners": winners, "votes": votes, "excerpts": excerpts, "snippets": snippets}
@@ -172,6 +186,8 @@ def verify(state: QueryState, writer: StreamWriter) -> dict:
     """Runs after the answer has streamed, so it annotates rather than blocks it."""
     writer(sse_event("stage", {"stage": "verifying"}))
     result = verify_service.check(state["answer"], state["excerpts"])
+    trace.get_current_span().set_attributes(
+        {"verification.status": result["status"], "verification.issues": len(result["issues"])})
     writer(sse_event("verification", result))
     return {"verification": result}
 
@@ -245,14 +261,65 @@ def _transient(exc: Exception) -> bool:
 _RETRY = RetryPolicy(max_attempts=2, initial_interval=0.5, retry_on=_transient)
 
 
+@contextmanager
+def _node_span(name: str):
+    """An interrupt() is LangGraph raising GraphBubbleUp: a pause, not a failure."""
+    with tracer.start_as_current_span(f"node.{name}", attributes={"langgraph.node": name},
+                                      record_exception=False, set_status_on_exception=False) as span:
+        try:
+            yield span
+        except GraphBubbleUp:
+            span.set_attribute("outcome", "paused")
+            raise
+        except Exception as exc:
+            span.set_attribute("outcome", "error")
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            raise
+        span.set_attribute("outcome", "ok")
+
+
+def _watch(span, kw: dict) -> dict:
+    """Mark each stage and the first answer token on the node's span, from the events it streams."""
+    if "writer" not in kw:
+        return kw
+    writer, first = kw["writer"], [True]
+
+    def watched(event: dict) -> None:
+        if event["event"] == "stage":
+            span.add_event(json.loads(event["data"])["stage"])
+        elif event["event"] == "token" and first:
+            first.clear()
+            span.add_event("first_token")
+        writer(event)
+    return {**kw, "writer": watched}
+
+
+def _traced(node):
+    """One span per node attempt. functools.wraps keeps the signature visible, which is how
+    LangGraph decides to inject `writer`."""
+    name = node.__name__
+    if inspect.iscoroutinefunction(node):
+        @functools.wraps(node)
+        async def wrapper(state, **kw):
+            with _node_span(name) as span:
+                return await node(state, **_watch(span, kw))
+    else:
+        @functools.wraps(node)
+        def wrapper(state, **kw):
+            with _node_span(name) as span:
+                return node(state, **_watch(span, kw))
+    return wrapper
+
+
 def _build() -> StateGraph:
     g = StateGraph(QueryState, input_schema=QueryInput)
     for node in (prepare, consolidate, insufficient, verify, finalize):
-        g.add_node(node.__name__, node)
+        g.add_node(node.__name__, _traced(node))
     # Not prepare: a re-run deletes the doc's chunks and pays for every embedding again.
     for node in (retrieve, summarize):
-        g.add_node(node.__name__, node, retry_policy=_RETRY)
-    g.add_node("review", review, destinations=("retrieve", "finalize"))
+        g.add_node(node.__name__, _traced(node), retry_policy=_RETRY)
+    g.add_node("review", _traced(review), destinations=("retrieve", "finalize"))
     g.add_conditional_edges(START, _route_start, ["prepare", "retrieve"])
     g.add_edge("prepare", "retrieve")
     g.add_edge("retrieve", "consolidate")
@@ -294,21 +361,34 @@ async def sweep(older_than: timedelta) -> None:
             await graph.checkpointer.adelete_thread(thread_id)
 
 
-async def run(graph_input, query_id: str):
+async def run(graph_input, query_id: str, action: str = "query"):
     """Relay one run's SSE events; drop its checkpoints once it has finished. A pause
     becomes a `review` event carrying the interrupt's payload and the id to resume. A
-    failed run keeps them (its last checkpoint is just before the failed node)."""
+    failed run keeps them (its last checkpoint is just before the failed node).
+    `action` is "query" for a new run, else the resume action, for the span."""
     config = {"configurable": {"thread_id": query_id}}
-    try:
-        async for mode, chunk in graph.astream(graph_input, config, stream_mode=["custom", "updates"],
-                                               durability="sync"):
-            if mode == "custom":
-                yield chunk
-            elif "__interrupt__" in chunk:
-                yield sse_event("review", {"query_id": query_id, **chunk["__interrupt__"][0].value})
-    finally:
-        if not (await graph.aget_state(config)).next:
-            await graph.checkpointer.adelete_thread(query_id)
+    with tracer.start_as_current_span("query.run", attributes={"query.id": query_id, "query.action": action}) as span:
+        outcome = "cancelled"  # stays if the client disconnects mid-run
+        try:
+            interrupted = False
+            async for mode, chunk in graph.astream(graph_input, config, stream_mode=["custom", "updates"],
+                                                   durability="sync"):
+                if mode == "custom":
+                    yield chunk
+                elif "__interrupt__" in chunk:
+                    interrupted = True
+                    yield sse_event("review", {"query_id": query_id, **chunk["__interrupt__"][0].value})
+            outcome = "paused" if interrupted else "ok"
+        except Exception:
+            outcome = "error"
+            raise
+        finally:
+            span.set_attribute("outcome", outcome)
+            snap = await graph.aget_state(config)
+            if "doc_id" in snap.values:
+                span.set_attribute("doc.id", snap.values["doc_id"])
+            if not snap.next:
+                await graph.checkpointer.adelete_thread(query_id)
 
 
 async def paused(query_id: str) -> dict | None:

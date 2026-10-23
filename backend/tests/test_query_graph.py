@@ -1,6 +1,7 @@
 """POST /query streams every stage from the query graph, in the order the frontend expects;
 flagged answers pause for review until POST /query/resume; transient failures are retried,
-and a run that still fails can be recovered from its checkpoint."""
+and a run that still fails can be recovered from its checkpoint. Each run is traced: a
+query.run span with one span per node attempt under it."""
 import json
 import sqlite3
 import uuid
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 import httpx
 import openai
 import pytest
+from opentelemetry.trace import StatusCode
 
 from app.config import settings
 from app.models.db import SessionLocal
@@ -385,3 +387,83 @@ def test_progress_is_on_disk_before_the_run_ends(client, doc_id, stubs):
     stubs.setattr(summarize, "summarize_stream", stream)
     client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
     assert during == [before + 1]
+
+
+def _run_tree(spans):
+    """The request's query.run span and its node spans in start order, all children of it."""
+    finished = sorted(spans.get_finished_spans(), key=lambda s: s.start_time)
+    (run,) = [s for s in finished if s.name == "query.run"]
+    nodes = [s for s in finished if s.name.startswith("node.")]
+    assert all(n.parent.span_id == run.context.span_id for n in nodes)
+    return run, nodes
+
+
+def test_each_node_is_a_span_under_the_run(client, doc_id, stubs, spans):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
+    client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    run, nodes = _run_tree(spans)
+    assert [n.name for n in nodes] == ["node.retrieve", "node.consolidate", "node.summarize", "node.verify",
+                                       "node.finalize"]
+    (http,) = [s for s in spans.get_finished_spans() if s.name == "POST /query"]
+    assert run.parent.span_id == http.context.span_id
+    assert run.attributes["outcome"] == "ok" and run.attributes["query.action"] == "query"
+    assert run.attributes["doc.id"] == doc_id
+    assert {n.attributes["outcome"] for n in nodes} == {"ok"}
+    retrieved, _, summarized, verified, _ = nodes
+    assert retrieved.attributes["retrieval.top_cosine"] == 0.6 and retrieved.attributes["retrieval.hits"] == 1
+    assert [e.name for e in summarized.events] == ["summarizing", "first_token"]
+    assert verified.attributes["verification.status"] == "ok"
+
+
+def test_a_retried_node_shows_both_attempts(client, doc_id, stubs, flaky, spans):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
+    flaky(retrieve, "hybrid_search", openai.APIConnectionError(request=_REQ))
+    client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    run, nodes = _run_tree(spans)
+    failed, retried = [n for n in nodes if n.name == "node.retrieve"]
+    assert failed.status.status_code == StatusCode.ERROR and failed.attributes["outcome"] == "error"
+    assert [e.name for e in failed.events] == ["embedding_query", "searching", "exception"]
+    assert retried.attributes["outcome"] == "ok" and run.attributes["outcome"] == "ok"
+
+
+def test_a_review_pause_is_not_an_error(client, doc_id, stubs, spans):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    run, nodes = _run_tree(spans)
+    # interrupt() is an exception inside LangGraph; the span must not read it as a failure.
+    assert nodes[-1].name == "node.review" and nodes[-1].attributes["outcome"] == "paused"
+    assert nodes[-1].status.status_code == StatusCode.UNSET and not nodes[-1].events
+    assert run.attributes["outcome"] == "paused" and run.status.status_code == StatusCode.UNSET
+
+    spans.clear()
+    client.post("/query/resume", json={"query_id": _data(r.text, "review")["query_id"], "action": "accept"})
+    resumed, nodes = _run_tree(spans)  # a new request, so a new trace, tied to the first by query.id
+    assert resumed.context.trace_id != run.context.trace_id
+    assert resumed.attributes["query.id"] == run.attributes["query.id"]
+    assert resumed.attributes["query.action"] == "accept" and resumed.attributes["outcome"] == "ok"
+    assert [n.name for n in nodes] == ["node.review", "node.finalize"]
+
+
+def test_a_recovered_run_traces_only_the_nodes_it_reruns(client, doc_id, stubs, flaky, spans):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
+    flaky(summarize, "summarize_stream", openai.APIConnectionError(request=_REQ), fails=2)
+    r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    run, nodes = _run_tree(spans)
+    assert run.status.status_code == StatusCode.ERROR and run.attributes["outcome"] == "error"
+    assert [n.name for n in nodes] == ["node.retrieve", "node.consolidate", "node.summarize", "node.summarize"]
+
+    spans.clear()
+    client.post("/query/resume", json={"query_id": _data(r.text, "error")["query_id"], "action": "recover"})
+    recovered, nodes = _run_tree(spans)
+    assert recovered.attributes["query.action"] == "recover" and recovered.attributes["outcome"] == "ok"
+    assert [n.name for n in nodes] == ["node.summarize", "node.verify", "node.finalize"]
+
+
+def test_prepare_stages_are_events_on_its_span(client, doc_id, stubs, spans):
+    stubs.setattr(prepare, "has_chunks", lambda _id: False)
+    client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    _, nodes = _run_tree(spans)
+    assert nodes[0].name == "node.prepare" and [e.name for e in nodes[0].events] == ["extracting"]

@@ -100,7 +100,8 @@ async def _resume_stream(req: ResumeRequest, user_id: str | None):
             yield sse_event("error", {"message": err})
             return
         # No input continues a failed run from its last checkpoint.
-        async for event in query_graph.run(None if recover else Command(resume=req.action), req.query_id):
+        async for event in query_graph.run(None if recover else Command(resume=req.action), req.query_id,
+                                             req.action):
             yield event
         yield sse_event("done", {})
     except Exception as exc:
