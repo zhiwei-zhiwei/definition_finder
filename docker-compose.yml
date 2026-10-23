@@ -8,6 +8,9 @@ services:
       - ./data:/app/data
       # Docling / Hugging Face model downloads survive container rebuilds
       - model-cache:/root/.cache
+    environment:
+      # Telemetry is off unless set, e.g. OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4318 with --profile obs
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
   frontend:
     build:
       context: ./frontend
@@ -16,6 +19,15 @@ services:
         NEXT_PUBLIC_API_BASE: http://localhost:8000
     ports: ["3000:3000"]
     depends_on: [backend]
+  # Traces + metrics UI: OTel Collector, Tempo, Prometheus and Grafana (http://localhost:3002)
+  # in one container. Only with `docker compose --profile obs up`.
+  lgtm:
+    image: grafana/otel-lgtm:0.35.0
+    profiles: [obs]
+    ports: ["3002:3000", "4318:4318"]
+    volumes:
+      - ./observability/grafana/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/lexisai.yaml:ro
+      - ./observability/grafana/lexisai.json:/otel-lgtm/lexisai/lexisai.json:ro
 
 volumes:
   model-cache:

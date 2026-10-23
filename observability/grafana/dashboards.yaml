@@ -1,0 +1,7 @@
+# Mounted into otel-lgtm's Grafana provisioning dir by docker-compose.yml (profile obs).
+apiVersion: 1
+providers:
+  - name: LexisAI
+    type: file
+    options:
+      path: /otel-lgtm/lexisai

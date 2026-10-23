@@ -256,6 +256,50 @@ docker compose down              # 停止（数据还在 data/ 里）
 - 后端镜像约 1.65 GB（使用 CPU 版 torch），前端镜像约 156 MB（Next standalone）。
 - 前端的 API 地址在构建时写进 JS。要改地址，修改 `docker-compose.yml` 里的 `NEXT_PUBLIC_API_BASE`，然后重新 `--build`。
 
+### 可观测性（OpenTelemetry + Grafana，可选）
+
+`lgtm` 服务（`grafana/otel-lgtm`）在一个容器里打包了 OTel Collector、Tempo（存 trace）、Prometheus（存指标）和 Grafana，只在加了 `--profile obs` 时才启动。启动后，看板 “LexisAI query graph” 会自动导入。
+
+#### 方式 A：本地开发（常用）
+
+1. 启动看板容器（仓库根目录）。第一次需要拉取约 930 MB 的镜像，之后几秒就能起来：
+   ```bash
+   docker compose --profile obs up -d lgtm
+   ```
+2. 启动后端时带上导出地址（在 `backend/` 下，venv 已激活）：
+   ```bash
+   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 uvicorn app.main:app --reload --port 8000
+   ```
+   如果想一直开着，可以把 `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` 写进 `backend/.env`，以后照常启动即可。但看板容器没开的时候，后端会不停打印连接失败的警告。
+3. 前端照常 `pnpm dev`，然后在页面上问几个问题。
+4. 等约 10 秒（指标每 10 秒推送一次），打开看板：http://localhost:3002/d/lexisai
+5. 想看单次查询的 trace：Grafana 左侧菜单 → Explore → 数据源选 Tempo → 切到 TraceQL，输入：
+   - `{name="query.run"}`：所有查询
+   - `{name="query.run" && span.outcome="error"}`：失败的查询
+   - `{span.query.id="<query_id>"}`：某一次查询，包括它后来的 accept 或 recover
+
+#### 方式 B：全部跑在 Docker 里
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=http://lgtm:4318 docker compose --profile obs up --build
+```
+
+注意地址是 `lgtm` 而不是 `localhost`：后端容器要通过 compose 的服务名找到看板容器。
+
+#### 停止
+
+```bash
+docker compose --profile obs stop lgtm    # 只停止，下次 start 时数据还在
+docker compose --profile obs down         # 删除容器，trace 和指标一起清空
+```
+
+#### 看板是空的？
+
+- **后端启动时没带 `OTEL_EXPORTER_OTLP_ENDPOINT`**：没设地址时后端不导出任何数据，这是默认行为，CI 和平时开发因此不受影响。
+- **刚查询完**：指标最多要等 10 秒才会推送过去。
+- **时间范围不对**：右上角的时间范围要覆盖你查询的时间段，默认是最近 30 分钟。
+- **改了 `observability/grafana/lexisai.json` 但没生效**：执行 `docker compose --profile obs restart lgtm` 让 Grafana 重新加载。
+
 ## 9. CI 与检索门禁
 
 每次 push 都会触发 `.github/workflows/ci.yml`：
