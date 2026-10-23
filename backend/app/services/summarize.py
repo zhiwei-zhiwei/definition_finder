@@ -16,9 +16,12 @@ page breaks with [page N]: cite the page of the nearest [page N] marker
 before the information, not just the excerpt's first page. Put the citation
 right after each fact, not once for a whole paragraph or list.
 
-Only report figures the excerpts state. Do not compute a total, growth
-rate or percentage from partial figures (e.g. adding up some segments); if
-the requested figure is not stated, say so.
+Only report figures the excerpts state. Do not compute any figure: no
+totals, differences, growth amounts or percentages, not even from two
+figures the excerpts give (e.g. subtracting last year's revenue from this
+year's, or adding up some segments). If the requested figure is not stated,
+give the stated figures it would come from and say the figure itself is
+not stated.
 
 When the excerpts do not contain the answer, say so without citing pages:
 a page list for what was not found is not a citation.
