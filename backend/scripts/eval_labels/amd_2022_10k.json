@@ -287,5 +287,45 @@
   {
     "query": "Which supercomputer uses AMD Frontier hardware?",
     "tag": "no-answer"
+  },
+  {
+    "query": "What was the value of work in process inventory at the end of 2022?",
+    "tag": "table",
+    "gold": "Work in process: December 31, 2022 (In millions): 2,648",
+    "key_numbers": [
+      "$2,648 million"
+    ]
+  },
+  {
+    "query": "How much did unrecognized tax benefits increase for tax positions taken in 2022?",
+    "tag": "table",
+    "gold": "Increases for tax positions taken in the current year: December 31, 2022 (In millions): 748",
+    "key_numbers": [
+      "$748 million"
+    ]
+  },
+  {
+    "query": "If $100 had been invested in AMD stock at the end of 2017, what was it worth at the end of 2022?",
+    "tag": "table",
+    "gold": "12/31/2022: 630",
+    "key_numbers": [
+      "630"
+    ]
+  },
+  {
+    "query": "How much were AMD's accrued compensation and benefits at the end of 2022?",
+    "tag": "table",
+    "gold": "Accrued compensation and benefits: December 31, 2022 (In millions): 701",
+    "key_numbers": [
+      "$701 million"
+    ]
+  },
+  {
+    "query": "What was the gross carrying amount of the customer backlog intangible asset at the end of 2022?",
+    "tag": "table",
+    "gold": "December 31, 2022 Gross Carrying Amount (In millions): 809",
+    "key_numbers": [
+      "$809 million"
+    ]
   }
 ]
