@@ -1,7 +1,8 @@
 """POST /query streams every stage from the query graph, in the order the frontend expects;
 flagged answers pause for review until POST /query/resume; transient failures are retried,
 and a run that still fails can be recovered from its checkpoint. Each run is traced: a
-query.run span with one span per node attempt under it."""
+query.run span with one span per node attempt under it, and counted in the run and node
+metrics by outcome."""
 import json
 import sqlite3
 import uuid
@@ -467,3 +468,50 @@ def test_prepare_stages_are_events_on_its_span(client, doc_id, stubs, spans):
     client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
     _, nodes = _run_tree(spans)
     assert nodes[0].name == "node.prepare" and [e.name for e in nodes[0].events] == ["extracting"]
+
+
+def _ran(metric_total, name, attrs):
+    return metric_total(name, attrs)[0]
+
+
+def test_a_finished_run_is_counted_with_its_nodes_and_score(client, doc_id, stubs, metric_total):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
+    nodes = ["retrieve", "consolidate", "summarize", "verify", "finalize"]
+    ok_run = {"query.action": "query", "outcome": "ok"}
+    before = {n: _ran(metric_total, "lexis.node.duration", {"langgraph.node": n, "outcome": "ok"}) for n in nodes}
+    runs, timed = _ran(metric_total, "lexis.query.runs", ok_run), _ran(metric_total, "lexis.query.duration", ok_run)
+    cosines = metric_total("lexis.retrieval.top_cosine")
+    client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    assert {n: _ran(metric_total, "lexis.node.duration", {"langgraph.node": n, "outcome": "ok"}) - before[n]
+            for n in nodes} == dict.fromkeys(nodes, 1)
+    assert _ran(metric_total, "lexis.query.runs", ok_run) == runs + 1
+    assert _ran(metric_total, "lexis.query.duration", ok_run) == timed + 1
+    count, total = metric_total("lexis.retrieval.top_cosine")
+    assert count == cosines[0] + 1 and total == pytest.approx(cosines[1] + 0.6)  # the stub's best cosine
+
+
+def test_a_pause_is_counted_as_paused(client, doc_id, stubs, metric_total):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    paused = {"query.action": "query", "outcome": "paused"}
+    review = {"langgraph.node": "review", "outcome": "paused"}
+    before = _ran(metric_total, "lexis.query.runs", paused), _ran(metric_total, "lexis.node.duration", review)
+    client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    assert (_ran(metric_total, "lexis.query.runs", paused),
+            _ran(metric_total, "lexis.node.duration", review)) == (before[0] + 1, before[1] + 1)
+
+
+def test_a_failed_run_is_counted_as_an_error_with_its_type(client, doc_id, stubs, flaky, metric_total):
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
+    flaky(summarize, "summarize_stream", openai.APIConnectionError(request=_REQ), fails=2)
+    failed = {"query.action": "query", "outcome": "error", "error.type": "APIConnectionError"}
+    attempts = {"langgraph.node": "summarize", "outcome": "error"}
+    recovered = {"query.action": "recover", "outcome": "ok"}
+    before = [_ran(metric_total, n, a) for n, a in
+              [("lexis.query.runs", failed), ("lexis.node.duration", attempts), ("lexis.query.runs", recovered)]]
+    r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
+    client.post("/query/resume", json={"query_id": _data(r.text, "error")["query_id"], "action": "recover"})
+    after = [_ran(metric_total, n, a) for n, a in
+             [("lexis.query.runs", failed), ("lexis.node.duration", attempts), ("lexis.query.runs", recovered)]]
+    assert [a - b for a, b in zip(after, before)] == [1, 2, 1]  # one failed run, both its attempts, one recovery

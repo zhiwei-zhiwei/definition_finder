@@ -61,6 +61,19 @@ def otel_metrics():
     return read
 
 
+@pytest.fixture
+def metric_total(otel_metrics):
+    """metric_total(name, attrs) -> (count, sum) over the points whose attributes include
+    `attrs`: a counter's count is its value, a histogram's the number of recordings."""
+    def total(name: str, attrs: dict | None = None) -> tuple[float, float]:
+        m = otel_metrics().get(name)
+        points = [p for p in (m.data.data_points if m else [])
+                  if (attrs or {}).items() <= dict(p.attributes).items()]
+        return (sum(getattr(p, "count", getattr(p, "value", 0)) for p in points),
+                sum(getattr(p, "sum", getattr(p, "value", 0)) for p in points))
+    return total
+
+
 def _extract_token() -> str:
     """Pull the one-time token out of the most recently 'sent' email."""
     sent = email_svc.last_sent()

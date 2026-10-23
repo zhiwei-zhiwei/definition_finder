@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from openai import OpenAI
 
 from app.config import settings
+from app.services.telemetry import record_tokens
 
 
 SYSTEM_PROMPT = """You are a serious document analyst. You will be
@@ -52,6 +53,7 @@ def summarize_stream(query: str, parent_texts: list[str], pages: list[int | None
     resp = client.chat.completions.create(
         model=settings.CHAT_MODEL,
         stream=True,
+        stream_options={"include_usage": True},  # usage comes in a last, choice-less chunk
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _format_context(query, parent_texts, pages)},
@@ -59,6 +61,7 @@ def summarize_stream(query: str, parent_texts: list[str], pages: list[int | None
         temperature=0.2,
     )
     for chunk in resp:
+        record_tokens("chat", settings.CHAT_MODEL, chunk.usage)
         try:
             delta = chunk.choices[0].delta.content
         except (IndexError, AttributeError):

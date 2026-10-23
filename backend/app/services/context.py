@@ -16,6 +16,7 @@ import tiktoken
 from openai import OpenAI
 
 from app.config import settings
+from app.services.telemetry import record_tokens
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ def generate_context(doc_text: str, chunk_text: str) -> str:
             temperature=0.0,
             max_tokens=120,
         )
+        record_tokens("chat", settings.CONTEXT_MODEL, resp.usage)
         return (resp.choices[0].message.content or "").strip()
     except Exception:
         log.warning("context generation failed for a chunk; using empty context", exc_info=True)

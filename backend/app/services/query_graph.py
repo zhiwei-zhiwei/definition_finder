@@ -21,15 +21,17 @@ checkpointer at startup, see `checkpointed`). A checkpoint is written after ever
 waits for review; a failed (or cut-off) one can be recovered: it continues from the
 failed node, without re-running the nodes before it.
 
-Tracing: a run is a `query.run` span and every node attempt a `node.<name>` span under it
-(a retried node shows up twice, the first attempt red). Without an OTLP endpoint they cost
-next to nothing (see services/telemetry.py).
+Telemetry: a run is a `query.run` span and every node attempt a `node.<name>` span under it
+(a retried node shows up twice, the first attempt red); the same two levels feed the run and
+node duration metrics, by outcome. Without an OTLP endpoint they cost next to nothing (see
+services/telemetry.py).
 """
 # ponytail: two resumes of one paused run at once both execute; the UI sends one at a time
 import functools
 import inspect
 import json
 import logging
+import time
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
@@ -52,6 +54,7 @@ from app.models.schema import Query
 from app.services import prepare as prepare_service
 from app.services import retrieve as retrieve_service
 from app.services import summarize as summarize_service
+from app.services import telemetry
 from app.services import verify as verify_service
 from app.services import vectorstore
 from app.services.highlight import compute_spans
@@ -115,6 +118,7 @@ def retrieve(state: QueryState, writer: StreamWriter) -> dict:
         # ponytail: a second vector scan (~ms per doc); return it from hybrid_search if docs grow large
         best = vectorstore.search(db, state["doc_id"], qvec, 1)
     top_cosine = best[0][1] if best else 0.0
+    telemetry.TOP_COSINE.record(top_cosine)
     trace.get_current_span().set_attributes(
         {"retrieval.top_k": state["top_k"], "retrieval.hits": len(hits), "retrieval.top_cosine": top_cosine})
     return {"hits": hits, "top_cosine": top_cosine}
@@ -264,19 +268,23 @@ _RETRY = RetryPolicy(max_attempts=2, initial_interval=0.5, retry_on=_transient)
 @contextmanager
 def _node_span(name: str):
     """An interrupt() is LangGraph raising GraphBubbleUp: a pause, not a failure."""
+    start, outcome = time.perf_counter(), "cancelled"
     with tracer.start_as_current_span(f"node.{name}", attributes={"langgraph.node": name},
                                       record_exception=False, set_status_on_exception=False) as span:
         try:
             yield span
+            outcome = "ok"
         except GraphBubbleUp:
-            span.set_attribute("outcome", "paused")
+            outcome = "paused"
             raise
         except Exception as exc:
-            span.set_attribute("outcome", "error")
+            outcome = "error"
             span.record_exception(exc)
             span.set_status(StatusCode.ERROR, str(exc))
             raise
-        span.set_attribute("outcome", "ok")
+        finally:
+            span.set_attribute("outcome", outcome)
+            telemetry.NODE_DURATION.record(time.perf_counter() - start, {"langgraph.node": name, "outcome": outcome})
 
 
 def _watch(span, kw: dict) -> dict:
@@ -368,7 +376,7 @@ async def run(graph_input, query_id: str, action: str = "query"):
     `action` is "query" for a new run, else the resume action, for the span."""
     config = {"configurable": {"thread_id": query_id}}
     with tracer.start_as_current_span("query.run", attributes={"query.id": query_id, "query.action": action}) as span:
-        outcome = "cancelled"  # stays if the client disconnects mid-run
+        start, outcome, error = time.perf_counter(), "cancelled", {}  # cancelled: the client left mid-run
         try:
             interrupted = False
             async for mode, chunk in graph.astream(graph_input, config, stream_mode=["custom", "updates"],
@@ -379,11 +387,14 @@ async def run(graph_input, query_id: str, action: str = "query"):
                     interrupted = True
                     yield sse_event("review", {"query_id": query_id, **chunk["__interrupt__"][0].value})
             outcome = "paused" if interrupted else "ok"
-        except Exception:
-            outcome = "error"
+        except Exception as exc:
+            outcome, error = "error", {"error.type": type(exc).__name__}
             raise
         finally:
             span.set_attribute("outcome", outcome)
+            attrs = {"query.action": action, "outcome": outcome}
+            telemetry.RUNS.add(1, {**attrs, **error})
+            telemetry.RUN_DURATION.record(time.perf_counter() - start, attrs)
             snap = await graph.aget_state(config)
             if "doc_id" in snap.values:
                 span.set_attribute("doc.id", snap.values["doc_id"])

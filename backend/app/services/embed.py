@@ -1,6 +1,7 @@
 from openai import OpenAI
 
 from app.config import settings
+from app.services.telemetry import record_tokens
 
 
 _client: OpenAI | None = None
@@ -21,4 +22,5 @@ def embed_batch(texts: list[str]) -> list[list[float]]:
     if settings.EMBED_DIM:
         kwargs["dimensions"] = settings.EMBED_DIM
     resp = client.embeddings.create(**kwargs)
+    record_tokens("embeddings", settings.EMBED_MODEL, resp.usage)
     return [d.embedding for d in resp.data]
