@@ -31,8 +31,10 @@ import functools
 import inspect
 import json
 import logging
+import threading
 import time
 from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
@@ -66,6 +68,15 @@ log = logging.getLogger(__name__)
 NO_CONTEXT = "No relevant context was found in this document."
 MAX_TOP_K = 50  # matches QueryRequest.top_k's bound
 STALE_RUN = timedelta(hours=24)  # unfinished runs nobody recovered are dropped at startup after this
+
+# Set by run() when its client disconnects. asyncio can't cancel the thread a sync node runs in,
+# so without it summarize would keep streaming (and paying for) an answer nobody reads. A
+# contextvar because LangGraph copies the run's context into that thread.
+_stopped: ContextVar[threading.Event | None] = ContextVar("stopped", default=None)
+
+
+class RunCancelled(Exception):
+    """The run's client went away mid-node."""
 
 
 class Excerpt(TypedDict):
@@ -163,6 +174,8 @@ def summarize(state: QueryState, writer: StreamWriter) -> dict:
     for tok in summarize_service.summarize_stream(
         state["query"], [e["marked"] for e in excerpts], [e["page_start"] for e in excerpts]
     ):
+        if (stopped := _stopped.get()) and stopped.is_set():
+            raise RunCancelled  # leaving the loop closes the OpenAI stream
         tokens.append(tok)
         writer(sse_event("token", tok))
     return {"answer": "".join(tokens)}
@@ -277,6 +290,8 @@ def _node_span(name: str):
         except GraphBubbleUp:
             outcome = "paused"
             raise
+        except RunCancelled:
+            raise  # outcome stays "cancelled"
         except Exception as exc:
             outcome = "error"
             span.record_exception(exc)
@@ -377,6 +392,8 @@ async def run(graph_input, query_id: str, action: str = "query"):
     config = {"configurable": {"thread_id": query_id}}
     with tracer.start_as_current_span("query.run", attributes={"query.id": query_id, "query.action": action}) as span:
         start, outcome, error = time.perf_counter(), "cancelled", {}  # cancelled: the client left mid-run
+        stopped = threading.Event()
+        _stopped.set(stopped)
         try:
             interrupted = False
             async for mode, chunk in graph.astream(graph_input, config, stream_mode=["custom", "updates"],
@@ -391,6 +408,8 @@ async def run(graph_input, query_id: str, action: str = "query"):
             outcome, error = "error", {"error.type": type(exc).__name__}
             raise
         finally:
+            if outcome == "cancelled":
+                stopped.set()
             span.set_attribute("outcome", outcome)
             attrs = {"query.action": action, "outcome": outcome}
             telemetry.RUNS.add(1, {**attrs, **error})

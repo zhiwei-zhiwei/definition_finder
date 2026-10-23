@@ -5,6 +5,7 @@ query.run span with one span per node attempt under it, and counted in the run a
 metrics by outcome."""
 import json
 import sqlite3
+import time
 import uuid
 from datetime import timedelta
 from types import SimpleNamespace
@@ -515,3 +516,38 @@ def test_a_failed_run_is_counted_as_an_error_with_its_type(client, doc_id, stubs
     after = [_ran(metric_total, n, a) for n, a in
              [("lexis.query.runs", failed), ("lexis.node.duration", attempts), ("lexis.query.runs", recovered)]]
     assert [a - b for a, b in zip(after, before)] == [1, 2, 1]  # one failed run, both its attempts, one recovery
+
+
+def test_a_dropped_client_stops_the_answer(client, doc_id, stubs, spans):
+    """The summarize node runs in a thread asyncio can't cancel; it must notice on its own."""
+    stubs.setattr(prepare, "has_chunks", lambda _id: True)
+    made, closed = [], []
+
+    def stream(*a):
+        try:
+            for _ in range(100):
+                made.append(1)
+                time.sleep(0.01)
+                yield "tok "
+        finally:
+            closed.append(True)  # the real one closes the OpenAI connection here
+
+    stubs.setattr(summarize, "summarize_stream", stream)
+    qid = uuid.uuid4().hex
+
+    async def disconnect_after_first_token():
+        events = query_graph.run({"query_id": qid, "doc_id": doc_id, "query": "q", "top_k": 5, "user_id": None}, qid)
+        async for event in events:
+            if event["event"] == "token":
+                break
+        await events.aclose()  # what the server does when the client goes away
+
+    client.portal.call(disconnect_after_first_token)
+    deadline = time.monotonic() + 2
+    while not (closed and any(s.name == "node.summarize" for s in spans.get_finished_spans())) \
+            and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert closed and len(made) < 20, len(made)  # 100 tokens would take a second
+    run, nodes = _run_tree(spans)
+    assert run.attributes["outcome"] == "cancelled"
+    assert nodes[-1].name == "node.summarize" and nodes[-1].attributes["outcome"] == "cancelled"

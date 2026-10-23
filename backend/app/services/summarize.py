@@ -50,7 +50,8 @@ def _format_context(query: str, parent_texts: list[str], pages: list[int | None]
 
 def summarize_stream(query: str, parent_texts: list[str], pages: list[int | None]) -> Iterator[str]:
     client = _get_client()
-    resp = client.chat.completions.create(
+    # `with`: closing the stream early (a cancelled run) drops the connection, so OpenAI stops generating.
+    with client.chat.completions.create(
         model=settings.CHAT_MODEL,
         stream=True,
         stream_options={"include_usage": True},  # usage comes in a last, choice-less chunk
@@ -59,12 +60,12 @@ def summarize_stream(query: str, parent_texts: list[str], pages: list[int | None
             {"role": "user", "content": _format_context(query, parent_texts, pages)},
         ],
         temperature=0.2,
-    )
-    for chunk in resp:
-        record_tokens("chat", settings.CHAT_MODEL, chunk.usage)
-        try:
-            delta = chunk.choices[0].delta.content
-        except (IndexError, AttributeError):
-            delta = None
-        if delta:
-            yield delta
+    ) as resp:
+        for chunk in resp:
+            record_tokens("chat", settings.CHAT_MODEL, chunk.usage)
+            try:
+                delta = chunk.choices[0].delta.content
+            except (IndexError, AttributeError):
+                delta = None
+            if delta:
+                yield delta

@@ -1,5 +1,6 @@
 """OpenTelemetry wiring: every API request gets a server span and http.server metrics, and
 every OpenAI call records its token usage."""
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 from app.config import settings
@@ -41,7 +42,7 @@ def test_answer_tokens_are_recorded_from_the_streams_last_chunk(monkeypatch, met
 
     def create(**kw):
         sent.update(kw)
-        return iter(chunks)
+        return nullcontext(iter(chunks))  # the real Stream is a context manager
 
     monkeypatch.setattr(summarize, "_get_client", lambda: _client(create))
     chat = {"gen_ai.operation.name": "chat", "gen_ai.request.model": settings.CHAT_MODEL}
