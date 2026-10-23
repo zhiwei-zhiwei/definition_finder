@@ -1,3 +1,5 @@
+import functools
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,16 +22,49 @@ class Extracted:
     stats: dict = field(default_factory=dict)
 
 
+_CONVERT_LOCK = threading.Lock()  # ponytail: one conversion at a time; a converter per thread if docs queue up
+
+
+@functools.cache
+def _converter(ocr: bool):
+    """Built once per setting: loading Docling's models takes 3-6 s.
+
+    OCR only runs on PDFs with a page that has no text layer (see extract). On a PDF that has one
+    it re-reads text the PDF already holds: on the 51-page lease it was 62 of 65 s and added only
+    logo text. Tables use TableFormer's fast mode because table items don't reach the chunks
+    (extract keeps items with .text, and a TableItem has none): fast halved the AMD 10-K's
+    conversion with identical items. Revisit if tables are ever chunked.
+    """
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+    from docling.document_converter import DocumentConverter, PdfFormatOption
+
+    opts = PdfPipelineOptions(do_ocr=ocr)
+    opts.table_structure_options.mode = TableFormerMode.FAST
+    return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opts)})
+
+
+def has_text_layer(path: Path) -> bool:
+    """Every page has extractable text: born digital, or a scan that was OCR'd already."""
+    import pypdfium2  # Docling's own PDF dependency
+
+    pdf = pypdfium2.PdfDocument(str(path))
+    try:
+        return all(page.get_textpage().get_text_range().strip() for page in pdf)
+    finally:
+        pdf.close()
+
+
 def extract(path: Path) -> Extracted:
     """Run Docling and return items in reading order with provenance.
 
     Non-PDFs won't have page/bbox; we still emit an HTML render that
     the frontend can display with injected data-chunk-id spans later.
     """
-    from docling.document_converter import DocumentConverter
-
-    converter = DocumentConverter()
-    result = converter.convert(str(path))
+    path = Path(path)
+    ocr = path.suffix.lower() != ".pdf" or not has_text_layer(path)
+    with _CONVERT_LOCK:
+        result = _converter(ocr).convert(str(path))
     doc = result.document
 
     items: list[ExtractedItem] = []
