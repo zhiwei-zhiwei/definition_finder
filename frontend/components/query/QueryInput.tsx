@@ -10,7 +10,7 @@ type Props = {
 
 export function QueryInput({ disabled, busy, onSubmit }: Props) {
   const [text, setText] = useState("");
-  const [topK, setTopK] = useState(5);
+  const [topK, setTopK] = useState(6); // backend DEFAULT_TOP_K
 
   function go() {
     const q = text.trim();

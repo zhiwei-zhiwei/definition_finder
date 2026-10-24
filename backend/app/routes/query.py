@@ -7,6 +7,7 @@ from langgraph.types import Command
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from app.config import settings
 from app.models.db import SessionLocal
 from app.models.schema import Document, User
 from app.services import query_graph
@@ -20,7 +21,7 @@ router = APIRouter(tags=["query"])
 class QueryRequest(BaseModel):
     doc_id: str
     query: str = Field(min_length=1)
-    top_k: int = Field(default=5, ge=1, le=50)
+    top_k: int = Field(default=settings.DEFAULT_TOP_K, ge=1, le=50)
     summary_style: str = "concise"
 
 

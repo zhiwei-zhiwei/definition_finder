@@ -124,7 +124,7 @@ def test_flagged_answer_pauses_until_accepted(client, doc_id, stubs):
     before = _checkpoints()
     r = client.post("/query", json={"doc_id": doc_id, "query": "how long is the term?"})
     pause = _data(r.text, "review")
-    assert pause["can_retry"] and pause["top_k"] == 5
+    assert pause["can_retry"] and pause["top_k"] == settings.DEFAULT_TOP_K
     assert _checkpoints() == before + 1  # the paused run survives in SQLite
 
     r = client.post("/query/resume", json={"query_id": pause["query_id"], "action": "accept"})
@@ -182,7 +182,7 @@ def test_retry_reruns_with_more_passages_and_updates_the_cache(client, stubs, ma
     stubs.setattr(summarize, "summarize_stream", lambda *a: iter(GROUNDED))
     r = client.post("/query/resume", json={"query_id": qid, "action": "retry"}, headers=bearer(jwt))
     assert _events(r.text) == QUERY_EVENTS[:6] + ["token", "token", "stage:verifying", "verification", "done"]
-    assert top_ks == [5, 10]
+    assert top_ks == [settings.DEFAULT_TOP_K, 2 * settings.DEFAULT_TOP_K]
     # The retry overwrote the paused run's cached row instead of adding one.
     [row] = client.get(f"/queries?doc_id={did}", headers=bearer(jwt)).json()
     assert row["id"] == qid and row["review_status"] is None  # the retried answer passed verify

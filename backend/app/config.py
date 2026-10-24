@@ -32,7 +32,10 @@ class Settings(BaseSettings):
     PARENT_TOKENS: int = 1000
     CHILD_TOKENS: int = 120
 
-    DEFAULT_TOP_K: int = 5
+    # Child hits per query. 6, not 5, since tables are chunked: their short rows take slots, and at 5 three
+    # AMD answers lost their gold passage (gate fixture context 36/42 -> 39/42 at 6, the same 3 misses as before
+    # tables; ~+17% context tokens).
+    DEFAULT_TOP_K: int = 6
     # Cross-encoder reranker (Hugging Face model id, e.g. BAAI/bge-reranker-v2-m3); empty = off.
     # It rescores the top RERANK_CANDIDATES fused hits and keeps the top k.
     # Off by default: bge-reranker-v2-m3 cut grounding failures 12.9% -> 6.8% on the AMD 10-K but

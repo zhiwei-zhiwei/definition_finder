@@ -357,7 +357,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pdf", required=True, type=Path)
     ap.add_argument("--labels", required=True, type=Path)
-    ap.add_argument("--top-k", type=int, default=5, help="child hits per query (app default: 5)")
+    ap.add_argument("--top-k", type=int, default=settings.DEFAULT_TOP_K, help="child hits per query (the app default)")
     ap.add_argument("--reps", type=int, default=3, help="summary + judge passes per query")
     ap.add_argument("--judge-model", default="gpt-4.1")
     ap.add_argument("--workers", type=int, default=4, help="concurrent summary/judge calls")
