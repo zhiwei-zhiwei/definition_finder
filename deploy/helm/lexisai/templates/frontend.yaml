@@ -22,6 +22,21 @@ spec:
           imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
           ports:
             - containerPort: 3000              # next start / server.js listens here (frontend/Dockerfile)
+          readinessProbe:
+            httpGet:
+              path: /                # Next.js serves the home page
+              port: 3000
+            periodSeconds: 10
+          # liveness: no long jobs here, so stricter than the backend's (restart after ~30 s silent)
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+
 ---
 # --- Service: stable in-cluster address lexisai-frontend:3000 ---
 apiVersion: v1

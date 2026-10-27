@@ -4,6 +4,12 @@
 backend:
   image:
     pullPolicy: Never
+  # Docker Desktop gives kind ~3.8 GiB; a 4Gi limit would never be reached before the whole VM
+  # runs out. 2.5Gi keeps the cap real: big PDFs (AMD 10-K, the lease) fail with a clean
+  # OOMKilled on this container only. Raise it together with Docker Desktop's memory.
+  resources:
+    limits:
+      memory: 2560Mi
 frontend:
   image:
     pullPolicy: Never

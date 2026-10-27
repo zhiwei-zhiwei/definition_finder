@@ -41,6 +41,25 @@ spec:
           imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
           ports:
             - containerPort: 8000                # uvicorn listens here (backend/Dockerfile CMD)
+          # readiness: only send traffic once uvicorn answers (until then the Pod shows 0/1 READY)
+          readinessProbe:
+            httpGet:
+              path: /health          # routes/health.py: returns {"ok": true}, touches nothing external
+              port: 8000
+            periodSeconds: 5
+            failureThreshold: 3
+          # liveness: restart only if it stops answering for ~60 s (3 x 20 s). Lenient on purpose:
+          # a CPU-bound Docling prepare can slow /health, and a restart throws that prepare away.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ .Values.backend.existingSecret }}   # every key in the Secret becomes an env var
