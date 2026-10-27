@@ -1,0 +1,81 @@
+{{- if .Values.backend.enabled }}
+# --- 1) PVC: one disk for everything the backend must keep across restarts ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-backend-data      # Release.Name = the name given to `helm install`
+  annotations:
+    # helm uninstall keeps this PVC: it holds the SQLite DBs, uploads and paid-for embeddings
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]   # mountable by one node at a time; fine, backend runs 1 replica
+  {{- with .Values.backend.storage.storageClass }}
+  storageClassName: {{ . }}      # only rendered when set; otherwise the cluster default is used
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.backend.storage.size }}
+---
+# --- 2) Deployment: keep exactly one backend Pod running ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+spec:
+  replicas: 1                    # SQLite allows one writer; step 3 documents why in the README
+  strategy:
+    type: Recreate               # stop the old Pod before starting the new one. The default
+                                 # RollingUpdate starts the new Pod first, and two Pods would
+                                 # fight over the same ReadWriteOnce disk / SQLite file.
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-backend
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-backend       # the Service finds the Pod by this label
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - containerPort: 8000                # uvicorn listens here (backend/Dockerfile CMD)
+          envFrom:
+            - secretRef:
+                name: {{ .Values.backend.existingSecret }}   # every key in the Secret becomes an env var
+          {{- /* `with` skips the block when env is empty (no bare `env:` = null); inside it `.` is .Values.backend.env */}}
+          {{- with .Values.backend.env }}
+          env:
+            {{- range $key, $value := . }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}        # quote: env values must be strings ("6", not 6)
+            {{- end }}
+          {{- end }}
+          volumeMounts:
+            # One PVC, two folders (subPath):
+            # the app resolves ../data/... from /app/backend, i.e. /app/data (see config.py)
+            - name: data
+              mountPath: /app/data
+              subPath: data
+            # Docling / Hugging Face model downloads (~500 MB), so a new Pod doesn't re-download
+            - name: data
+              mountPath: /root/.cache
+              subPath: model-cache
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-backend-data
+---
+# --- 3) Service: a stable in-cluster address (lexisai-backend:8000) for the Pod ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-backend
+spec:
+  selector:
+    app: {{ .Release.Name }}-backend           # route to Pods carrying this label
+  ports:
+    - port: 8000                               # the Service's port
+      targetPort: 8000                         # the container's port
+{{- end }}

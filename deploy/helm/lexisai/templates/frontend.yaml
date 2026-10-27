@@ -1,0 +1,37 @@
+{{- if .Values.frontend.enabled }}
+# --- Deployment: keep one Next.js Pod running ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-frontend
+spec:
+  replicas: 1
+  # No strategy: Recreate here: the frontend has no shared disk, so the default
+  # RollingUpdate (new Pod up before the old one stops) is safe and avoids downtime.
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-frontend        # which Pods this Deployment owns (required)
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-frontend      # must match the selector above
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - containerPort: 3000              # next start / server.js listens here (frontend/Dockerfile)
+---
+# --- Service: stable in-cluster address lexisai-frontend:3000 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-frontend           # this was missing -> the "" name warning
+spec:
+  selector:
+    app: {{ .Release.Name }}-frontend          # route to Pods with this label
+  ports:
+    - port: 3000
+      targetPort: 3000
+{{- end }}

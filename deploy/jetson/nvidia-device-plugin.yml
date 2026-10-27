@@ -1,0 +1,47 @@
+# NVIDIA device plugin for the Jetson k3s node (LX-1 step 1): the upstream static manifest
+# (deployments/static/nvidia-device-plugin.yml at v0.20.1) with two changes:
+# - runtimeClassName: nvidia, so the nvidia runtime mounts the Tegra driver libs into the plugin;
+#   k3s keeps runc as the default and creates the `nvidia` RuntimeClass itself
+# - DEVICE_DISCOVERY_STRATEGY=tegra: Jetson has no NVML, which the default discovery uses
+# Apply: kubectl apply -f deploy/jetson/nvidia-device-plugin.yml
+# Check: kubectl describe node | grep nvidia.com/gpu   (expect 1)
+apiVersion: apps/v1
+kind: DaemonSet                      # DaemonSet = one copy on every node (here: the one Jetson)
+metadata:
+  name: nvidia-device-plugin-daemonset
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: nvidia-device-plugin-ds
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        name: nvidia-device-plugin-ds
+    spec:
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+      priorityClassName: "system-node-critical"
+      runtimeClassName: nvidia       # change 1
+      containers:
+      - image: nvcr.io/nvidia/k8s-device-plugin:v0.20.1
+        name: nvidia-device-plugin-ctr
+        env:
+        - name: DEVICE_DISCOVERY_STRATEGY   # change 2
+          value: tegra
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+        volumeMounts:
+        - name: kubelet-device-plugins-dir
+          mountPath: /var/lib/kubelet/device-plugins   # where kubelet listens for device plugins
+      volumes:
+      - name: kubelet-device-plugins-dir
+        hostPath:
+          path: /var/lib/kubelet/device-plugins
+          type: Directory

@@ -1,0 +1,9 @@
+# Mac kind cluster. Images are put on the node with `kind load docker-image`,
+# so never try to pull them: a missing image fails fast with ErrImageNeverPull
+# instead of a confusing ErrImagePull from a registry that doesn't have it.
+backend:
+  image:
+    pullPolicy: Never
+frontend:
+  image:
+    pullPolicy: Never

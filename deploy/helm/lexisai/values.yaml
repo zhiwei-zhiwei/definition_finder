@@ -1,0 +1,24 @@
+# Defaults for every environment. values-<env>.yaml files override only what differs.
+
+backend:
+  enabled: true                       # the component switch: false = render nothing for it
+  image:
+    repository: lexisai-backend       # step 6 changes this to ghcr.io/<you>/lexisai-backend
+    tag: dev
+    pullPolicy: IfNotPresent
+  # A Secret created outside the chart (kubectl create secret ...) holding OPENAI_API_KEY
+  # and JWT_SECRET. Kept out of values so the key never lands in a file or in git.
+  existingSecret: lexisai-secrets
+  # Non-secret settings, passed as env vars; app/config.py (pydantic-settings) reads them.
+  # Empty = the code defaults in config.py.
+  env: {}
+  storage:
+    size: 5Gi
+    storageClass: ""                  # "" = the cluster's default StorageClass
+
+frontend:
+  enabled: true
+  image:
+    repository: lexisai-frontend
+    tag: dev
+    pullPolicy: IfNotPresent
