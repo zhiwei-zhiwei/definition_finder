@@ -1,0 +1,15 @@
+# Traefik (Ingress controller) on the Mac kind cluster (LX-1 step 4).
+# Install: helm install traefik traefik/traefik --version 42.1.3 -n traefik --create-namespace -f deploy/kind/traefik-values.yaml
+service:
+  spec: # chart v42 nests the Service type under spec (a top-level service.type is silently ignored)
+    type: ClusterIP # kind has no cloud load balancer; LoadBalancer would sit at <pending> forever
+ports:
+  web:
+    hostPort: 80 # bind port 80 on the kind node; deploy/kind/cluster.yaml forwards the Mac's :80 to it
+  websecure:
+    hostPort: 443
+ingressClass:
+  enabled: true
+  isDefaultClass: true # Ingresses without an ingressClassName are handled by Traefik too
+# Nothing SSE-specific is needed: Traefik streams text/event-stream as it arrives (no buffering)
+# and has no request body size cap. The backend's 15 s SSE ping keeps idle timeouts from firing.

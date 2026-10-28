@@ -1,9 +1,9 @@
 # Defaults for every environment. values-<env>.yaml files override only what differs.
 
 backend:
-  enabled: true # the component switch: false = render nothing for it
+  enabled: true                       # the component switch: false = render nothing for it
   image:
-    repository: lexisai-backend # step 6 changes this to ghcr.io/<you>/lexisai-backend
+    repository: lexisai-backend       # step 6 changes this to ghcr.io/<you>/lexisai-backend
     tag: dev
     pullPolicy: IfNotPresent
   # A Secret created outside the chart (kubectl create secret ...) holding OPENAI_API_KEY
@@ -14,15 +14,15 @@ backend:
   env: {}
   storage:
     size: 5Gi
-    storageClass: "" # "" = the cluster's default StorageClass
-  # requests = reserved at scheduling time; limits = hard cap (memory over it -> OOMKilled, this Pod only).
+    storageClass: ""                  # "" = the cluster's default StorageClass
+    # requests = reserved at scheduling time; limits = hard cap (memory over it -> OOMKilled, this Pod only).
   # Numbers measured on kind: idle ~210 MB, Docling prepare peaks at 3.1-3.3 GB.
   resources:
     requests:
-      cpu: 500m # half a core reserved; Docling may burst to all cores (no CPU limit, see README)
+      cpu: 500m          # half a core reserved; Docling may burst to all cores (no CPU limit, see README)
       memory: 1Gi
     limits:
-      memory: 4Gi # Docling peak 3.3 GB + margin
+      memory: 4Gi        # Docling peak 3.3 GB + margin
 
 frontend:
   enabled: true
@@ -30,10 +30,15 @@ frontend:
     repository: lexisai-frontend
     tag: dev
     pullPolicy: IfNotPresent
-  # measured: ~50 MB idle, 84 MB peak
+    # measured: ~50 MB idle, 84 MB peak
   resources:
     requests:
       cpu: 50m
       memory: 128Mi
     limits:
       memory: 256Mi
+      
+ingress:
+  enabled: false
+  className: ""      # which controller handles it: traefik on kind; on EKS (LX-3) the AWS one
+  host: ""           # "" = any host name (on kind that's localhost)

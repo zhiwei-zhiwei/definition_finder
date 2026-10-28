@@ -1,0 +1,39 @@
+{{- if .Values.ingress.enabled }}
+# One entry point for the browser: API paths -> backend, everything else -> frontend.
+# Same origin for both, so the frontend calls relative URLs and CORS never comes into play.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - http:
+        paths:
+          # The backend's route prefixes (backend/app/routes/*.py). Prefix matches whole path
+          # segments: /query covers /query/resume but not /queries, so both are listed.
+          # Add a prefix here whenever the backend gets a new router.
+          {{- range list "/auth" "/documents" "/queries" "/query" "/health" }}
+          - path: {{ . }}                     # inside range, `.` is the current list item
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-backend   # `$` = the chart root; `.Release` would be nil here
+                port:
+                  number: 8000
+          {{- end }}
+          # TODO (yours): one more path, "/" with pathType Prefix, to the frontend Service on port 3000.
+          #   The longest matching prefix wins, so "/" only catches what the backend paths don't. 
+          - path: "/"
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $.Release.Name }}-frontend
+                port:
+                  number: 3000
+      {{- with .Values.ingress.host }}
+      host: {{ . }}                           # only rendered when a host is set
+      {{- end }}
+{{- end }}

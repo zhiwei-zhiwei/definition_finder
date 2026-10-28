@@ -1,7 +1,7 @@
 import type { Review, ReviewAction, ReviewVerdict, Verification } from "@/lib/types";
 
 export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 function authHeaders(): Record<string, string> {
   if (typeof window === "undefined") return {};

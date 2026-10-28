@@ -11,9 +11,12 @@ Backend (FastAPI) + frontend (Next.js). Environments: `values-kind.yaml` (Mac, k
     kubectl create secret generic lexisai-secrets \
       --from-literal=OPENAI_API_KEY="$(grep '^OPENAI_API_KEY=' backend/.env | cut -d= -f2-)" \
       --from-literal=JWT_SECRET="$(openssl rand -hex 32)"
+    helm repo add traefik https://traefik.github.io/charts
+    helm install traefik traefik/traefik --version 42.1.3 -n traefik --create-namespace -f deploy/kind/traefik-values.yaml
+    # build the frontend with an empty API base: it then calls the API on its own origin (the Ingress)
+    docker build -t lexisai-frontend:dev --build-arg NEXT_PUBLIC_API_BASE= frontend
     helm install lexisai deploy/helm/lexisai -f deploy/helm/lexisai/values-kind.yaml
-    kubectl port-forward svc/lexisai-backend 8000:8000 &   # the frontend bundle calls localhost:8000
-    kubectl port-forward svc/lexisai-frontend 3000:3000
+    open http://localhost
 
 After rebuilding an image with the same tag: `kind load ...` then `kubectl rollout restart deploy/lexisai-backend`.
 

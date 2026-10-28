@@ -13,3 +13,6 @@ backend:
 frontend:
   image:
     pullPolicy: Never
+ingress:
+  enabled: true
+  className: traefik
