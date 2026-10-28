@@ -105,8 +105,11 @@ jobs:
           # -f: exit non-zero on HTTP 4xx/5xx, which fails the step
           # -sS: quiet, but still print the error if something goes wrong
           # --max-time 30: give up after 30 s instead of hanging (pitfall 6)
-          curl -fsS --max-time 30 http://localhost/health          # backend through the Ingress; prints {"ok":true}
-          curl -fsS --max-time 30 -o /dev/null http://localhost/   # frontend; only the status matters, drop the body
+          # --retry: `helm install --wait` returns once the Pods are Ready, but Traefik learns their
+          # endpoints a moment later and answers 503 until then. curl retries 503 (and refused
+          # connections with --retry-connrefused) for up to ~30 s instead of failing on that race.
+          curl -fsS --max-time 30 --retry 15 --retry-delay 2 --retry-connrefused http://localhost/health          # backend through the Ingress; prints {"ok":true}
+          curl -fsS --max-time 30 --retry 15 --retry-delay 2 --retry-connrefused -o /dev/null http://localhost/   # frontend; only the status matters, drop the body
 
       - name: "Smoke: upload a document"
         run: |
